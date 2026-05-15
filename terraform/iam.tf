@@ -204,9 +204,9 @@ resource "aws_iam_role_policy" "pipeline_runner" {
         Resource = "*"
       },
       {
-        Sid    = "PassRoleToEMR"
-        Effect = "Allow"
-        Action = "iam:PassRole"
+        Sid      = "PassRoleToEMR"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
         Resource = aws_iam_role.emr_serverless.arn
       },
       {
