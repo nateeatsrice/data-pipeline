@@ -232,8 +232,7 @@ with DAG(
             job_driver={
                 "sparkSubmit": {
                     "entryPoint": (
-                        f"s3://{SCRIPTS_BUCKET}/spark-scripts/"
-                        "bronze_to_silver_taxi.py"
+                        f"s3://{SCRIPTS_BUCKET}/spark-scripts/bronze_to_silver_taxi.py"
                     ),
                     "entryPointArguments": [
                         "--data-bucket",
@@ -316,7 +315,7 @@ with DAG(
         job_driver={
             "sparkSubmit": {
                 "entryPoint": (
-                    f"s3://{SCRIPTS_BUCKET}/spark-scripts/" "silver_to_gold_features.py"
+                    f"s3://{SCRIPTS_BUCKET}/spark-scripts/silver_to_gold_features.py"
                 ),
                 "entryPointArguments": [
                     "--data-bucket",

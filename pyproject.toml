@@ -20,7 +20,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "moto[s3]>=5.0.0",
-    "ruff>=0.3.0",
+    "ruff==0.15.10",
 ]
 # Airflow — separate group because it's heavy and only needed for DAG tests
 airflow = [
@@ -37,7 +37,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "moto[s3]>=5.0.0",
-    "ruff>=0.3.0",
+    "ruff==0.15.10",
     "pre-commit>=4.6.0",
 ]
 

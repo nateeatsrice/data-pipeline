@@ -38,11 +38,14 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
+      - name: Install dependencies
+        run: uv sync --group dev
+
       - name: Run ruff linter
-        run: uvx ruff check src/ tests/
+        run: uv run ruff check src/ tests/
 
       - name: Run ruff formatter check
-        run: uvx ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/
 
   # ─── Unit Tests ──────────────────────────────────────────────────────────
   test:
