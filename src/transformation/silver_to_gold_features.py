@@ -24,8 +24,7 @@ logger = logging.getLogger("silver_to_gold")
 
 def create_spark_session() -> SparkSession:
     return (
-        SparkSession.builder
-        .appName("silver_to_gold_features")
+        SparkSession.builder.appName("silver_to_gold_features")
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .getOrCreate()
     )
@@ -45,55 +44,47 @@ def build_trip_weather_daily(spark, data_bucket: str, silver_db: str):
     taxi = spark.table(f"{silver_db}.yellow_taxi_trips")
 
     # Daily taxi aggregation
-    taxi_daily = (
-        taxi
-        .groupBy("pickup_date")
-        .agg(
-            F.count("*").alias("total_trips"),
-            F.sum("passenger_count").alias("total_passengers"),
-            F.avg("trip_distance").alias("avg_trip_distance"),
-            F.avg("trip_duration_minutes").alias("avg_trip_duration_min"),
-            F.avg("fare_amount").alias("avg_fare"),
-            F.avg("tip_amount").alias("avg_tip"),
-            F.sum("total_amount").alias("total_revenue"),
-            F.avg("total_amount").alias("avg_total_amount"),
-            # Tip percentage (exclude zero-fare trips)
-            F.avg(
-                F.when(
-                    F.col("fare_amount") > 0,
-                    F.col("tip_amount") / F.col("fare_amount") * 100,
-                )
-            ).alias("avg_tip_percentage"),
-            # Payment type distribution
-            F.sum(
-                F.when(F.col("payment_type") == 1, 1).otherwise(0)
-            ).alias("credit_card_trips"),
-            F.sum(
-                F.when(F.col("payment_type") == 2, 1).otherwise(0)
-            ).alias("cash_trips"),
-            # Time of day distribution
-            F.sum(
-                F.when(F.col("pickup_hour").between(6, 9), 1).otherwise(0)
-            ).alias("morning_rush_trips"),
-            F.sum(
-                F.when(F.col("pickup_hour").between(16, 19), 1).otherwise(0)
-            ).alias("evening_rush_trips"),
-            F.sum(
-                F.when(
-                    (F.col("pickup_hour") >= 22) | (F.col("pickup_hour") <= 5), 1
-                ).otherwise(0)
-            ).alias("late_night_trips"),
-        )
+    taxi_daily = taxi.groupBy("pickup_date").agg(
+        F.count("*").alias("total_trips"),
+        F.sum("passenger_count").alias("total_passengers"),
+        F.avg("trip_distance").alias("avg_trip_distance"),
+        F.avg("trip_duration_minutes").alias("avg_trip_duration_min"),
+        F.avg("fare_amount").alias("avg_fare"),
+        F.avg("tip_amount").alias("avg_tip"),
+        F.sum("total_amount").alias("total_revenue"),
+        F.avg("total_amount").alias("avg_total_amount"),
+        # Tip percentage (exclude zero-fare trips)
+        F.avg(
+            F.when(
+                F.col("fare_amount") > 0,
+                F.col("tip_amount") / F.col("fare_amount") * 100,
+            )
+        ).alias("avg_tip_percentage"),
+        # Payment type distribution
+        F.sum(F.when(F.col("payment_type") == 1, 1).otherwise(0)).alias(
+            "credit_card_trips"
+        ),
+        F.sum(F.when(F.col("payment_type") == 2, 1).otherwise(0)).alias("cash_trips"),
+        # Time of day distribution
+        F.sum(F.when(F.col("pickup_hour").between(6, 9), 1).otherwise(0)).alias(
+            "morning_rush_trips"
+        ),
+        F.sum(F.when(F.col("pickup_hour").between(16, 19), 1).otherwise(0)).alias(
+            "evening_rush_trips"
+        ),
+        F.sum(
+            F.when(
+                (F.col("pickup_hour") >= 22) | (F.col("pickup_hour") <= 5), 1
+            ).otherwise(0)
+        ).alias("late_night_trips"),
     )
 
     # Day of week features
-    taxi_daily = (
-        taxi_daily
-        .withColumn("day_of_week", F.dayofweek("pickup_date"))
-        .withColumn(
-            "is_weekend",
-            F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False),
-        )
+    taxi_daily = taxi_daily.withColumn(
+        "day_of_week", F.dayofweek("pickup_date")
+    ).withColumn(
+        "is_weekend",
+        F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False),
     )
 
     # Read silver weather data
@@ -118,16 +109,13 @@ def build_trip_weather_daily(spark, data_bucket: str, silver_db: str):
     ).drop("weather_date")
 
     # Add partition columns
-    features = (
-        features
-        .withColumn("year", F.year("pickup_date"))
-        .withColumn("month", F.month("pickup_date"))
+    features = features.withColumn("year", F.year("pickup_date")).withColumn(
+        "month", F.month("pickup_date")
     )
 
     # Round all double columns to 2 decimal places for cleanliness
     double_cols = [
-        f.name for f in features.schema.fields
-        if isinstance(f.dataType, DoubleType)
+        f.name for f in features.schema.fields if isinstance(f.dataType, DoubleType)
     ]
     for col in double_cols:
         features = features.withColumn(col, F.round(F.col(col), 2))
@@ -146,24 +134,21 @@ def build_location_hourly_features(spark, data_bucket: str, silver_db: str):
 
     taxi = spark.table(f"{silver_db}.yellow_taxi_trips")
 
-    location_hourly = (
-        taxi
-        .groupBy("pickup_date", "pickup_hour", "pickup_location_id")
-        .agg(
-            F.count("*").alias("trip_count"),
-            F.avg("trip_distance").alias("avg_distance"),
-            F.avg("trip_duration_minutes").alias("avg_duration_min"),
-            F.avg("fare_amount").alias("avg_fare"),
-            F.avg("tip_amount").alias("avg_tip"),
-            F.sum("total_amount").alias("total_revenue"),
-            F.countDistinct("dropoff_location_id").alias("unique_destinations"),
-        )
+    location_hourly = taxi.groupBy(
+        "pickup_date", "pickup_hour", "pickup_location_id"
+    ).agg(
+        F.count("*").alias("trip_count"),
+        F.avg("trip_distance").alias("avg_distance"),
+        F.avg("trip_duration_minutes").alias("avg_duration_min"),
+        F.avg("fare_amount").alias("avg_fare"),
+        F.avg("tip_amount").alias("avg_tip"),
+        F.sum("total_amount").alias("total_revenue"),
+        F.countDistinct("dropoff_location_id").alias("unique_destinations"),
     )
 
     # Add time features for ML
     location_hourly = (
-        location_hourly
-        .withColumn("day_of_week", F.dayofweek("pickup_date"))
+        location_hourly.withColumn("day_of_week", F.dayofweek("pickup_date"))
         .withColumn(
             "is_weekend",
             F.when(F.col("day_of_week").isin(1, 7), True).otherwise(False),
@@ -200,42 +185,30 @@ def main():
             spark, args.data_bucket, args.silver_database
         )
 
-        gold_path_1 = (
-            f"s3://{args.data_bucket}/gold/features/trip_weather_daily/"
-        )
+        gold_path_1 = f"s3://{args.data_bucket}/gold/features/trip_weather_daily/"
         (
-            trip_weather
-            .write
-            .mode("overwrite")
+            trip_weather.write.mode("overwrite")
             .partitionBy("year", "month")
             .option("path", gold_path_1)
             .format("parquet")
             .saveAsTable(f"{args.gold_database}.trip_weather_daily")
         )
-        logger.info(
-            f"trip_weather_daily: {trip_weather.count()} records written"
-        )
+        logger.info(f"trip_weather_daily: {trip_weather.count()} records written")
 
         # ── Gold Table 2: Location Hourly Features ──
         location_features = build_location_hourly_features(
             spark, args.data_bucket, args.silver_database
         )
 
-        gold_path_2 = (
-            f"s3://{args.data_bucket}/gold/features/location_hourly_features/"
-        )
+        gold_path_2 = f"s3://{args.data_bucket}/gold/features/location_hourly_features/"
         (
-            location_features
-            .write
-            .mode("overwrite")
+            location_features.write.mode("overwrite")
             .partitionBy("year", "month")
             .option("path", gold_path_2)
             .format("parquet")
             .saveAsTable(f"{args.gold_database}.location_hourly_features")
         )
-        logger.info(
-            f"location_hourly_features: {location_features.count()} records"
-        )
+        logger.info(f"location_hourly_features: {location_features.count()} records")
 
         logger.info("Silver → Gold transformation complete!")
 

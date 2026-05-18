@@ -31,6 +31,7 @@ def mock_s3_client():
     """Create a mocked S3 client using moto."""
     try:
         from moto import mock_aws
+
         with mock_aws():
             client = boto3.client("s3", region_name="us-east-1")
             # Create test buckets
@@ -47,6 +48,7 @@ def mock_s3_client():
 def test_config():
     """Create a test configuration."""
     from config import Config
+
     config = Config()
     config.DATA_BUCKET = "test-data-lake"
     config.SCRIPTS_BUCKET = "test-scripts"

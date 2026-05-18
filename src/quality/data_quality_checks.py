@@ -28,6 +28,7 @@ logger = logging.getLogger("data_quality")
 @dataclass
 class CheckResult:
     """Result of a data quality check."""
+
     check_name: str
     passed: bool
     message: str
@@ -35,13 +36,9 @@ class CheckResult:
     threshold: float = None
 
 
-def check_s3_object_exists(
-    s3_client, bucket: str, prefix: str
-) -> CheckResult:
+def check_s3_object_exists(s3_client, bucket: str, prefix: str) -> CheckResult:
     """Verify that data was actually written to S3."""
-    response = s3_client.list_objects_v2(
-        Bucket=bucket, Prefix=prefix, MaxKeys=1
-    )
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
     exists = response.get("KeyCount", 0) > 0
     return CheckResult(
         check_name="s3_object_exists",
@@ -80,8 +77,7 @@ def check_s3_file_size(
 
 
 def check_s3_file_count(
-    s3_client, bucket: str, prefix: str,
-    min_files: int = 1, max_files: int = 1000
+    s3_client, bucket: str, prefix: str, min_files: int = 1, max_files: int = 1000
 ) -> CheckResult:
     """Verify reasonable number of output files (catches runaway partitioning)."""
     paginator = s3_client.get_paginator("list_objects_v2")
@@ -128,6 +124,7 @@ def check_s3_freshness(
 
 # ─── Composite Check Suites ─────────────────────────────────────────────────
 
+
 def run_bronze_taxi_checks(
     bucket: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
@@ -167,10 +164,12 @@ def run_gold_checks(
     results = []
     for table in ["trip_weather_daily", "location_hourly_features"]:
         prefix = f"gold/features/{table}/year={year}/month={month:02d}/"
-        results.extend([
-            check_s3_object_exists(s3_client, bucket, prefix),
-            check_s3_file_size(s3_client, bucket, prefix, min_bytes=1000),
-        ])
+        results.extend(
+            [
+                check_s3_object_exists(s3_client, bucket, prefix),
+                check_s3_file_size(s3_client, bucket, prefix, min_bytes=1000),
+            ]
+        )
 
     return results
 

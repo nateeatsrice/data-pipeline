@@ -79,9 +79,7 @@ def download_file(url: str, local_path: Path) -> Path:
     return local_path
 
 
-def upload_to_s3(
-    s3_client, local_path: Path, bucket: str, s3_key: str
-) -> str:
+def upload_to_s3(s3_client, local_path: Path, bucket: str, s3_key: str) -> str:
     """Upload a file to S3 and return the full S3 URI."""
     logger.info(f"Uploading to s3://{bucket}/{s3_key}")
     s3_client.upload_file(
@@ -133,9 +131,7 @@ def ingest_yellow_taxi(
         if skip_existing and check_already_ingested(
             s3_client, config.DATA_BUCKET, s3_key
         ):
-            logger.info(
-                f"Already ingested: {year}-{month:02d}. Skipping."
-            )
+            logger.info(f"Already ingested: {year}-{month:02d}. Skipping.")
             result["skipped"] = True
             result["success"] = True
             result["s3_uri"] = f"s3://{config.DATA_BUCKET}/{s3_key}"
@@ -144,8 +140,7 @@ def ingest_yellow_taxi(
         # Check if source exists
         if not check_source_exists(source_url):
             msg = (
-                f"Source not available yet: {source_url}. "
-                f"TLC data has a ~2 month lag."
+                f"Source not available yet: {source_url}. TLC data has a ~2 month lag."
             )
             logger.warning(msg)
             result["error"] = msg
@@ -155,9 +150,7 @@ def ingest_yellow_taxi(
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / filename
             download_file(source_url, local_path)
-            s3_uri = upload_to_s3(
-                s3_client, local_path, config.DATA_BUCKET, s3_key
-            )
+            s3_uri = upload_to_s3(s3_client, local_path, config.DATA_BUCKET, s3_key)
 
         result["success"] = True
         result["s3_uri"] = s3_uri
@@ -193,8 +186,7 @@ def ingest_green_taxi(
     filename = f"green_tripdata_{year}-{month:02d}.parquet"
     source_url = f"{config.NYC_TLC_BASE_URL}/{filename}"
     s3_key = (
-        f"{config.BRONZE_PREFIX}/nyc_tlc/green/"
-        f"year={year}/month={month:02d}/{filename}"
+        f"{config.BRONZE_PREFIX}/nyc_tlc/green/year={year}/month={month:02d}/{filename}"
     )
 
     try:
@@ -215,9 +207,7 @@ def ingest_green_taxi(
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / filename
             download_file(source_url, local_path)
-            s3_uri = upload_to_s3(
-                s3_client, local_path, config.DATA_BUCKET, s3_key
-            )
+            s3_uri = upload_to_s3(s3_client, local_path, config.DATA_BUCKET, s3_key)
 
         result["success"] = True
         result["s3_uri"] = s3_uri

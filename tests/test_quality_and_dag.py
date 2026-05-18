@@ -47,22 +47,16 @@ class TestDataQualityChecks:
             ]
         }
 
-        result = check_s3_file_size(
-            mock_s3, "bucket", "prefix/", min_bytes=1_000_000
-        )
+        result = check_s3_file_size(mock_s3, "bucket", "prefix/", min_bytes=1_000_000)
         assert result.passed is True
         assert result.metric_value == 15_000_000
 
     def test_s3_file_size_fail(self):
         """Should fail when total size is below minimum."""
         mock_s3 = MagicMock()
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [{"Size": 100}]
-        }
+        mock_s3.list_objects_v2.return_value = {"Contents": [{"Size": 100}]}
 
-        result = check_s3_file_size(
-            mock_s3, "bucket", "prefix/", min_bytes=1_000_000
-        )
+        result = check_s3_file_size(mock_s3, "bucket", "prefix/", min_bytes=1_000_000)
         assert result.passed is False
 
     def test_evaluate_results_all_pass(self):
@@ -88,14 +82,13 @@ class TestAirflowDag:
     def test_dag_loads_without_errors(self):
         """DAG file should parse without import errors."""
         # This catches syntax errors and import failures
-        dag_path = os.path.join(
-            os.path.dirname(__file__), "..", "airflow", "dags"
-        )
+        dag_path = os.path.join(os.path.dirname(__file__), "..", "airflow", "dags")
         sys.path.insert(0, dag_path)
 
         try:
             # We need Airflow installed for this test
             from airflow.models import DagBag
+
             dag_bag = DagBag(dag_folder=dag_path, include_examples=False)
             assert len(dag_bag.import_errors) == 0, (
                 f"DAG import errors: {dag_bag.import_errors}"
@@ -107,9 +100,8 @@ class TestAirflowDag:
         """DAG should contain all required tasks."""
         try:
             from airflow.models import DagBag
-            dag_path = os.path.join(
-                os.path.dirname(__file__), "..", "airflow", "dags"
-            )
+
+            dag_path = os.path.join(os.path.dirname(__file__), "..", "airflow", "dags")
             dag_bag = DagBag(dag_folder=dag_path, include_examples=False)
             dag = dag_bag.get_dag("nyc_taxi_monthly_pipeline")
 
