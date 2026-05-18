@@ -65,6 +65,8 @@ def download_file(url: str, local_path: Path) -> Path:
     response.raise_for_status()
 
     total_size = int(response.headers.get("content-length", 0))
+    total_mb = total_size / (1024 * 1024)
+    logger.info(f"Expected size: {total_mb:.1f} MB")
     downloaded = 0
 
     with open(local_path, "wb") as f:

@@ -4,20 +4,18 @@ Uses a local SparkSession (no EMR needed) with sample data.
 
 Note: These tests require pyspark to be installed locally.
 Run with: pytest tests/test_transformations.py -v
+
 """
 
 import os
 import sys
+
 import pytest
 
-# Check if PySpark is available
+# Check if PySpark is available.
 try:
     from pyspark.sql import SparkSession
-    from pyspark.sql import functions as F
-    from pyspark.sql.types import (
-        StructType, StructField, StringType, IntegerType,
-        DoubleType, TimestampType,
-    )
+
     SPARK_AVAILABLE = True
 except ImportError:
     SPARK_AVAILABLE = False

@@ -20,14 +20,11 @@ Usage (local testing with spark-submit):
 """
 
 import argparse
-import sys
 import logging
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    DoubleType, IntegerType, TimestampType, StringType
-)
+from pyspark.sql.types import DoubleType, IntegerType, TimestampType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bronze_to_silver_taxi")

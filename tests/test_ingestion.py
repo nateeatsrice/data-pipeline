@@ -3,20 +3,20 @@ Tests for ingestion modules.
 Tests the download logic, S3 upload, and idempotency checks.
 """
 
-import io
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
-from ingestion.nyc_tlc_ingestion import (
-    check_source_exists,
-    check_already_ingested,
-    ingest_yellow_taxi,
-)
 from ingestion.noaa_weather_ingestion import (
-    parse_noaa_temperature,
     parse_noaa_precipitation,
+    parse_noaa_temperature,
     process_noaa_to_daily,
+)
+from ingestion.nyc_tlc_ingestion import (
+    check_already_ingested,
+    check_source_exists,
+    ingest_yellow_taxi,
 )
 
 

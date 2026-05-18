@@ -7,9 +7,10 @@ so tests run without any AWS credentials or costs.
 
 import os
 import sys
-import pytest
-import boto3
 from unittest.mock import MagicMock
+
+import boto3
+import pytest
 
 # Add src to path so imports work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))

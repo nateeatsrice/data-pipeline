@@ -17,15 +17,9 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import UTC
 
 import boto3
-
-try:
-    from src.config import Config
-except ImportError:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-    from src.config import Config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("data_quality")
@@ -108,7 +102,7 @@ def check_s3_freshness(
     s3_client, bucket: str, prefix: str, max_age_hours: int = 48
 ) -> CheckResult:
     """Verify that data was written recently (catches stale pipelines)."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
 
     response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
     if "Contents" not in response:
@@ -119,7 +113,7 @@ def check_s3_freshness(
         )
 
     latest = max(obj["LastModified"] for obj in response["Contents"])
-    age = datetime.now(timezone.utc) - latest
+    age = datetime.now(UTC) - latest
     age_hours = age.total_seconds() / 3600
     passed = age_hours <= max_age_hours
 

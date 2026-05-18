@@ -4,16 +4,16 @@ Tests for data quality checks and Airflow DAG structure.
 
 import os
 import sys
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from quality.data_quality_checks import (
-    check_s3_object_exists,
-    check_s3_file_size,
-    check_s3_file_count,
     CheckResult,
+    check_s3_file_size,
+    check_s3_object_exists,
     evaluate_results,
 )
 
