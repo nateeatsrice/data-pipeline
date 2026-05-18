@@ -103,7 +103,7 @@ class TestAirflowDag:
 
             dag_path = os.path.join(os.path.dirname(__file__), "..", "airflow", "dags")
             dag_bag = DagBag(dag_folder=dag_path, include_examples=False)
-            dag = dag_bag.get_dag("nyc_taxi_monthly_pipeline")
+            dag = dag_bag.dags.get("nyc_taxi_monthly_pipeline")
 
             if dag is None:
                 pytest.skip("DAG not found in bag")
