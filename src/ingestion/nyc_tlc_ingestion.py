@@ -44,7 +44,7 @@ def check_source_exists(url: str) -> bool:
     try:
         response = requests.head(url, timeout=10, allow_redirects=True)
         return response.status_code == 200
-    except requests.RequestException as e:
+    except Exception as e:
         logger.warning(f"HEAD request failed for {url}: {e}")
         return False
 
