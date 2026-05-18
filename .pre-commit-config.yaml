@@ -1,0 +1,7 @@
+repos: #ruff's official pre-commit repo.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10 #without pinning ruff version, hooks would drift over time
+    hooks:
+      - id: ruff #same as ruff check --fix
+        args: [--fix]
+      - id: ruff-format #same as ruff format
