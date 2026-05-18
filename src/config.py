@@ -42,9 +42,7 @@ class Config:
     GOLD_PREFIX: str = "gold"
 
     # EMR Serverless
-    EMR_APP_ID: str = field(
-        default_factory=lambda: os.getenv("EMR_APP_ID", "")
-    )
+    EMR_APP_ID: str = field(default_factory=lambda: os.getenv("EMR_APP_ID", ""))
     EMR_EXECUTION_ROLE_ARN: str = field(
         default_factory=lambda: os.getenv("EMR_EXECUTION_ROLE_ARN", "")
     )
@@ -61,25 +59,17 @@ class Config:
         )
     )
     GLUE_DB_GOLD: str = field(
-        default_factory=lambda: os.getenv(
-            "GLUE_DB_GOLD", "nyc_taxi_pipeline_gold_dev"
-        )
+        default_factory=lambda: os.getenv("GLUE_DB_GOLD", "nyc_taxi_pipeline_gold_dev")
     )
 
     # Athena
     ATHENA_WORKGROUP: str = field(
-        default_factory=lambda: os.getenv(
-            "ATHENA_WORKGROUP", "nyc-taxi-pipeline-dev"
-        )
+        default_factory=lambda: os.getenv("ATHENA_WORKGROUP", "nyc-taxi-pipeline-dev")
     )
 
     # Data Source URLs
-    NYC_TLC_BASE_URL: str = (
-        "https://d37ci6vzurychx.cloudfront.net/trip-data"
-    )
-    NOAA_BASE_URL: str = (
-        "https://www.ncei.noaa.gov/data/global-hourly/access"
-    )
+    NYC_TLC_BASE_URL: str = "https://d37ci6vzurychx.cloudfront.net/trip-data"
+    NOAA_BASE_URL: str = "https://www.ncei.noaa.gov/data/global-hourly/access"
     # NYC Central Park weather station ID
     NOAA_STATION_ID: str = "72505394728"
 
@@ -89,8 +79,9 @@ class Config:
     # NYC TLC data has ~2 month publication lag
     TLC_PUBLICATION_LAG_MONTHS: int = 2
 
-    def s3_path(self, layer: str, source: str, dataset: str,
-                year: int = None, month: int = None) -> str:
+    def s3_path(
+        self, layer: str, source: str, dataset: str, year: int = None, month: int = None
+    ) -> str:
         """Build a consistent S3 path.
 
         Example:

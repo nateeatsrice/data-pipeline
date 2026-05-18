@@ -20,14 +20,11 @@ Usage (local testing with spark-submit):
 """
 
 import argparse
-import sys
 import logging
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    DoubleType, IntegerType, TimestampType, StringType
-)
+from pyspark.sql.types import DoubleType, IntegerType, TimestampType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bronze_to_silver_taxi")
@@ -36,8 +33,7 @@ logger = logging.getLogger("bronze_to_silver_taxi")
 def create_spark_session(app_name: str = "bronze_to_silver_taxi") -> SparkSession:
     """Create SparkSession with Glue catalog integration."""
     return (
-        SparkSession.builder
-        .appName(app_name)
+        SparkSession.builder.appName(app_name)
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .getOrCreate()
@@ -94,15 +90,18 @@ def clean_yellow_taxi(df):
 
     # ── Step 2: Cast types ──
     df = (
-        df
-        .withColumn("vendor_id", F.col("vendor_id").cast(IntegerType()))
+        df.withColumn("vendor_id", F.col("vendor_id").cast(IntegerType()))
         .withColumn("pickup_datetime", F.col("pickup_datetime").cast(TimestampType()))
         .withColumn("dropoff_datetime", F.col("dropoff_datetime").cast(TimestampType()))
         .withColumn("passenger_count", F.col("passenger_count").cast(IntegerType()))
         .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType()))
         .withColumn("rate_code_id", F.col("rate_code_id").cast(IntegerType()))
-        .withColumn("pickup_location_id", F.col("pickup_location_id").cast(IntegerType()))
-        .withColumn("dropoff_location_id", F.col("dropoff_location_id").cast(IntegerType()))
+        .withColumn(
+            "pickup_location_id", F.col("pickup_location_id").cast(IntegerType())
+        )
+        .withColumn(
+            "dropoff_location_id", F.col("dropoff_location_id").cast(IntegerType())
+        )
         .withColumn("payment_type", F.col("payment_type").cast(IntegerType()))
         .withColumn("fare_amount", F.col("fare_amount").cast(DoubleType()))
         .withColumn("extra", F.col("extra").cast(DoubleType()))
@@ -122,9 +121,7 @@ def clean_yellow_taxi(df):
         df = df.withColumn("congestion_surcharge", F.lit(0.0))
 
     if "airport_fee" in df.columns:
-        df = df.withColumn(
-            "airport_fee", F.col("airport_fee").cast(DoubleType())
-        )
+        df = df.withColumn("airport_fee", F.col("airport_fee").cast(DoubleType()))
     else:
         df = df.withColumn("airport_fee", F.lit(0.0))
 
@@ -162,8 +159,7 @@ def clean_yellow_taxi(df):
 
     # ── Step 4: Add derived columns ──
     df = (
-        df
-        .withColumn("pickup_date", F.to_date("pickup_datetime"))
+        df.withColumn("pickup_date", F.to_date("pickup_datetime"))
         .withColumn("pickup_hour", F.hour("pickup_datetime"))
         .withColumn("pickup_day_of_week", F.dayofweek("pickup_datetime"))
         .withColumn(
@@ -185,9 +181,13 @@ def clean_yellow_taxi(df):
 
     # ── Step 5: Deduplicate ──
     dedup_cols = [
-        "vendor_id", "pickup_datetime", "dropoff_datetime",
-        "pickup_location_id", "dropoff_location_id",
-        "fare_amount", "trip_distance",
+        "vendor_id",
+        "pickup_datetime",
+        "dropoff_datetime",
+        "pickup_location_id",
+        "dropoff_location_id",
+        "fare_amount",
+        "trip_distance",
     ]
     before_dedup = df.count()
     df = df.dropDuplicates(dedup_cols)
@@ -202,9 +202,7 @@ def write_silver(df, output_path: str, glue_database: str, table_name: str):
     logger.info(f"Writing silver data to {output_path}")
 
     (
-        df
-        .write
-        .mode("overwrite")
+        df.write.mode("overwrite")
         .partitionBy("year", "month")
         .option("path", output_path)
         .format("parquet")
@@ -238,9 +236,7 @@ def main():
         df_clean = clean_yellow_taxi(df)
 
         # Write silver
-        silver_path = (
-            f"s3://{args.data_bucket}/silver/nyc_tlc/yellow/"
-        )
+        silver_path = f"s3://{args.data_bucket}/silver/nyc_tlc/yellow/"
         write_silver(df_clean, silver_path, args.glue_database, "yellow_taxi_trips")
 
         logger.info("Bronze → Silver transformation complete!")

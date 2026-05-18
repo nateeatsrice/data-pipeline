@@ -16,7 +16,7 @@ import logging
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import DoubleType, DateType
+from pyspark.sql.types import DateType, DoubleType
 from pyspark.sql.window import Window
 
 logging.basicConfig(level=logging.INFO)
@@ -25,8 +25,7 @@ logger = logging.getLogger("bronze_to_silver_weather")
 
 def create_spark_session() -> SparkSession:
     return (
-        SparkSession.builder
-        .appName("bronze_to_silver_weather")
+        SparkSession.builder.appName("bronze_to_silver_weather")
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .getOrCreate()
     )
@@ -37,8 +36,7 @@ def clean_weather(df):
 
     # Cast types
     df = (
-        df
-        .withColumn("date", F.col("date").cast(DateType()))
+        df.withColumn("date", F.col("date").cast(DateType()))
         .withColumn("temp_avg_celsius", F.col("temp_avg_celsius").cast(DoubleType()))
         .withColumn("temp_min_celsius", F.col("temp_min_celsius").cast(DoubleType()))
         .withColumn("temp_max_celsius", F.col("temp_max_celsius").cast(DoubleType()))
@@ -53,14 +51,8 @@ def clean_weather(df):
             F.col("temp_avg_celsius").isNull()
             | F.col("temp_avg_celsius").between(-40, 50)
         )
-        & (
-            F.col("precip_total_mm").isNull()
-            | (F.col("precip_total_mm") >= 0)
-        )
-        & (
-            F.col("wind_avg_ms").isNull()
-            | F.col("wind_avg_ms").between(0, 50)
-        )
+        & (F.col("precip_total_mm").isNull() | (F.col("precip_total_mm") >= 0))
+        & (F.col("wind_avg_ms").isNull() | F.col("wind_avg_ms").between(0, 50))
     )
 
     # Interpolate small gaps in temperature using neighboring days
@@ -79,8 +71,7 @@ def clean_weather(df):
 
     # Add derived columns
     df = (
-        df
-        .withColumn(
+        df.withColumn(
             "temp_avg_fahrenheit",
             F.round(F.col("temp_avg_celsius") * 9.0 / 5.0 + 32, 1),
         )
@@ -99,8 +90,7 @@ def clean_weather(df):
         .withColumn(
             "is_snowy",
             F.when(
-                (F.col("precip_total_mm") > 0.5)
-                & (F.col("temp_avg_celsius") <= 1.0),
+                (F.col("precip_total_mm") > 0.5) & (F.col("temp_avg_celsius") <= 1.0),
                 True,
             ).otherwise(False),
         )
@@ -122,8 +112,7 @@ def main():
 
     try:
         bronze_path = (
-            f"s3://{args.data_bucket}/bronze/noaa_weather/nyc_daily/"
-            f"year={args.year}/"
+            f"s3://{args.data_bucket}/bronze/noaa_weather/nyc_daily/year={args.year}/"
         )
         logger.info(f"Reading bronze weather from {bronze_path}")
         df = spark.read.parquet(bronze_path)
@@ -135,9 +124,7 @@ def main():
         logger.info(f"Writing silver weather to {silver_path}")
 
         (
-            df_clean
-            .write
-            .mode("overwrite")
+            df_clean.write.mode("overwrite")
             .partitionBy("year", "month")
             .option("path", silver_path)
             .format("parquet")

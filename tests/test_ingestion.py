@@ -3,20 +3,20 @@ Tests for ingestion modules.
 Tests the download logic, S3 upload, and idempotency checks.
 """
 
-import io
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from botocore.exceptions import ClientError
 
-from ingestion.nyc_tlc_ingestion import (
-    check_source_exists,
-    check_already_ingested,
-    ingest_yellow_taxi,
-)
 from ingestion.noaa_weather_ingestion import (
-    parse_noaa_temperature,
     parse_noaa_precipitation,
+    parse_noaa_temperature,
     process_noaa_to_daily,
+)
+from ingestion.nyc_tlc_ingestion import (
+    check_already_ingested,
+    check_source_exists,
+    ingest_yellow_taxi,
 )
 
 
@@ -77,9 +77,7 @@ class TestNycTlcIngestion:
 
         with patch("ingestion.nyc_tlc_ingestion.check_source_exists") as mock_check:
             mock_check.return_value = False
-            result = ingest_yellow_taxi(
-                2099, 12, config=test_config, s3_client=mock_s3
-            )
+            result = ingest_yellow_taxi(2099, 12, config=test_config, s3_client=mock_s3)
 
         assert result["success"] is False
         assert result["error"] is not None
@@ -91,6 +89,7 @@ class TestNoaaWeatherIngestion:
     def test_parse_temperature_valid(self):
         """Should correctly parse NOAA temperature format."""
         import pandas as pd
+
         series = pd.Series(["+0123,1", "-0050,1", "+9999,9", None])
         result = parse_noaa_temperature(series)
         assert result[0] == pytest.approx(12.3)
@@ -101,6 +100,7 @@ class TestNoaaWeatherIngestion:
     def test_parse_precipitation_valid(self):
         """Should correctly parse NOAA precipitation format."""
         import pandas as pd
+
         series = pd.Series(["01,0050,1,1", "01,0000,1,1", None])
         result = parse_noaa_precipitation(series)
         assert result[0] == pytest.approx(5.0)
@@ -112,15 +112,17 @@ class TestNoaaWeatherIngestion:
         import pandas as pd
 
         # Create minimal hourly data
-        hourly_data = pd.DataFrame({
-            "DATE": [
-                "2024-12-15T06:00:00",
-                "2024-12-15T12:00:00",
-                "2024-12-15T18:00:00",
-                "2024-12-16T06:00:00",
-            ],
-            "TMP": ["+0020,1", "+0050,1", "+0030,1", "+0010,1"],
-        })
+        hourly_data = pd.DataFrame(
+            {
+                "DATE": [
+                    "2024-12-15T06:00:00",
+                    "2024-12-15T12:00:00",
+                    "2024-12-15T18:00:00",
+                    "2024-12-16T06:00:00",
+                ],
+                "TMP": ["+0020,1", "+0050,1", "+0030,1", "+0010,1"],
+            }
+        )
 
         daily = process_noaa_to_daily(hourly_data)
 

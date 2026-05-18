@@ -40,6 +40,7 @@ def parse_noaa_temperature(tmp_col: pd.Series) -> pd.Series:
     Parse NOAA TMP field: format is '+0123,1' meaning +12.3°C, quality code 1.
     Returns temperature in Celsius as float.
     """
+
     def _parse(val):
         if pd.isna(val) or val == "+9999,9":
             return None
@@ -48,6 +49,7 @@ def parse_noaa_temperature(tmp_col: pd.Series) -> pd.Series:
             return float(temp_str) / 10.0
         except (ValueError, IndexError):
             return None
+
     return tmp_col.apply(_parse)
 
 
@@ -57,6 +59,7 @@ def parse_noaa_precipitation(aa1_col: pd.Series) -> pd.Series:
     Format: 'HH,DDDD,C,Q' -> period hours, depth in mm*10, condition, quality.
     Returns precipitation in mm.
     """
+
     def _parse(val):
         if pd.isna(val):
             return 0.0
@@ -68,15 +71,13 @@ def parse_noaa_precipitation(aa1_col: pd.Series) -> pd.Series:
         except (ValueError, IndexError):
             pass
         return 0.0
+
     return aa1_col.apply(_parse)
 
 
 def download_noaa_data(year: int, station_id: str) -> pd.DataFrame:
     """Download and parse NOAA hourly data for a given year and station."""
-    url = (
-        f"https://www.ncei.noaa.gov/data/global-hourly/access/"
-        f"{year}/{station_id}.csv"
-    )
+    url = f"https://www.ncei.noaa.gov/data/global-hourly/access/{year}/{station_id}.csv"
     logger.info(f"Downloading NOAA data from {url}")
 
     response = requests.get(url, timeout=120)
@@ -109,6 +110,7 @@ def process_noaa_to_daily(df: pd.DataFrame) -> pd.DataFrame:
 
     # Parse wind speed (WND field: angle, quality, type, speed*10, quality)
     if "WND" in df.columns:
+
         def parse_wind(val):
             if pd.isna(val):
                 return None
@@ -119,6 +121,7 @@ def process_noaa_to_daily(df: pd.DataFrame) -> pd.DataFrame:
                     return speed if speed < 999 else None
             except (ValueError, IndexError):
                 return None
+
         df["wind_speed_ms"] = df["WND"].apply(parse_wind)
     else:
         df["wind_speed_ms"] = None
@@ -144,8 +147,12 @@ def process_noaa_to_daily(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Round numeric columns
-    for col in ["temp_avg_celsius", "temp_min_celsius", "temp_max_celsius",
-                "wind_avg_ms"]:
+    for col in [
+        "temp_avg_celsius",
+        "temp_min_celsius",
+        "temp_max_celsius",
+        "wind_avg_ms",
+    ]:
         daily[col] = daily[col].round(1)
     daily["precip_total_mm"] = daily["precip_total_mm"].round(1)
 
@@ -178,10 +185,7 @@ def ingest_weather(
     }
 
     filename = f"nyc_weather_daily_{year}.parquet"
-    s3_key = (
-        f"{config.BRONZE_PREFIX}/noaa_weather/nyc_daily/"
-        f"year={year}/{filename}"
-    )
+    s3_key = f"{config.BRONZE_PREFIX}/noaa_weather/nyc_daily/year={year}/{filename}"
 
     try:
         # Check if already ingested
