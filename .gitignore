@@ -46,3 +46,5 @@ Thumbs.db
 *.parquet
 *.csv
 data/
+
+.DS_Store
