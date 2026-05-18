@@ -18,22 +18,17 @@ Architecture Notes:
 - Quality checks run as Python callables after each stage
 """
 
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-import json
 import logging
 import os
-import time
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.operators.emr import (
     EmrServerlessStartJobOperator,
 )
-from airflow.providers.amazon.aws.sensors.emr import (
-    EmrServerlessJobSensor,
-)
 from airflow.utils.task_group import TaskGroup
+from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +65,7 @@ default_args = {
 
 # ─── Helper Functions ────────────────────────────────────────────────────────
 
+
 def get_processing_period(**context):
     """
     Determine which year/month to process based on the DAG's logical_date.
@@ -94,9 +90,10 @@ def get_processing_period(**context):
 def ingest_taxi_data(**context):
     """Ingest yellow (and optionally green) taxi data."""
     import sys
+
     sys.path.insert(0, "/opt/airflow/src")
-    from ingestion.nyc_tlc_ingestion import ingest_yellow_taxi, ingest_green_taxi
     from config import Config
+    from ingestion.nyc_tlc_ingestion import ingest_green_taxi, ingest_yellow_taxi
 
     ti = context["ti"]
     year = ti.xcom_pull(key="process_year")
@@ -119,9 +116,10 @@ def ingest_taxi_data(**context):
 def ingest_weather_data(**context):
     """Ingest NOAA weather data for the processing year."""
     import sys
+
     sys.path.insert(0, "/opt/airflow/src")
-    from ingestion.noaa_weather_ingestion import ingest_weather
     from config import Config
+    from ingestion.noaa_weather_ingestion import ingest_weather
 
     ti = context["ti"]
     year = ti.xcom_pull(key="process_year")
@@ -139,12 +137,13 @@ def ingest_weather_data(**context):
 def run_quality_checks(check_type: str, **context):
     """Run data quality checks for the specified layer."""
     import sys
+
     sys.path.insert(0, "/opt/airflow/src")
     from quality.data_quality_checks import (
-        run_bronze_taxi_checks,
-        run_silver_taxi_checks,
-        run_gold_checks,
         evaluate_results,
+        run_bronze_taxi_checks,
+        run_gold_checks,
+        run_silver_taxi_checks,
     )
 
     ti = context["ti"]
@@ -166,8 +165,9 @@ def run_quality_checks(check_type: str, **context):
 
 def upload_spark_scripts(**context):
     """Upload PySpark scripts to S3 so EMR Serverless can access them."""
-    import boto3
     import glob
+
+    import boto3
 
     s3_client = boto3.client("s3", region_name=AWS_REGION)
     script_dir = "/opt/airflow/src/transformation"
@@ -192,7 +192,6 @@ with DAG(
     max_active_runs=1,  # Process one month at a time
     tags=["nyc-taxi", "etl", "monthly"],
 ) as dag:
-
     # ── Step 0: Determine processing period ──
     determine_period = PythonOperator(
         task_id="determine_processing_period",
@@ -237,10 +236,14 @@ with DAG(
                         "bronze_to_silver_taxi.py"
                     ),
                     "entryPointArguments": [
-                        "--data-bucket", DATA_BUCKET,
-                        "--year", "{{ ti.xcom_pull(key='process_year') }}",
-                        "--month", "{{ ti.xcom_pull(key='process_month') }}",
-                        "--glue-database", GLUE_DB_SILVER,
+                        "--data-bucket",
+                        DATA_BUCKET,
+                        "--year",
+                        "{{ ti.xcom_pull(key='process_year') }}",
+                        "--month",
+                        "{{ ti.xcom_pull(key='process_month') }}",
+                        "--glue-database",
+                        GLUE_DB_SILVER,
                     ],
                     "sparkSubmitParameters": (
                         "--conf spark.executor.cores=2 "
@@ -272,9 +275,12 @@ with DAG(
                         "bronze_to_silver_weather.py"
                     ),
                     "entryPointArguments": [
-                        "--data-bucket", DATA_BUCKET,
-                        "--year", "{{ ti.xcom_pull(key='process_year') }}",
-                        "--glue-database", GLUE_DB_SILVER,
+                        "--data-bucket",
+                        DATA_BUCKET,
+                        "--year",
+                        "{{ ti.xcom_pull(key='process_year') }}",
+                        "--glue-database",
+                        GLUE_DB_SILVER,
                     ],
                     "sparkSubmitParameters": (
                         "--conf spark.executor.cores=2 "
@@ -310,15 +316,19 @@ with DAG(
         job_driver={
             "sparkSubmit": {
                 "entryPoint": (
-                    f"s3://{SCRIPTS_BUCKET}/spark-scripts/"
-                    "silver_to_gold_features.py"
+                    f"s3://{SCRIPTS_BUCKET}/spark-scripts/" "silver_to_gold_features.py"
                 ),
                 "entryPointArguments": [
-                    "--data-bucket", DATA_BUCKET,
-                    "--silver-database", GLUE_DB_SILVER,
-                    "--gold-database", GLUE_DB_GOLD,
-                    "--year", "{{ ti.xcom_pull(key='process_year') }}",
-                    "--month", "{{ ti.xcom_pull(key='process_month') }}",
+                    "--data-bucket",
+                    DATA_BUCKET,
+                    "--silver-database",
+                    GLUE_DB_SILVER,
+                    "--gold-database",
+                    GLUE_DB_GOLD,
+                    "--year",
+                    "{{ ti.xcom_pull(key='process_year') }}",
+                    "--month",
+                    "{{ ti.xcom_pull(key='process_month') }}",
                 ],
                 "sparkSubmitParameters": (
                     "--conf spark.executor.cores=2 "
@@ -332,9 +342,7 @@ with DAG(
         },
         configuration_overrides={
             "monitoringConfiguration": {
-                "s3MonitoringConfiguration": {
-                    "logUri": f"s3://{DATA_BUCKET}/emr-logs/"
-                }
+                "s3MonitoringConfiguration": {"logUri": f"s3://{DATA_BUCKET}/emr-logs/"}
             }
         },
     )
