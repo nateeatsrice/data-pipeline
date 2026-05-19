@@ -23,11 +23,11 @@ import os
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.operators.emr import (
     EmrServerlessStartJobOperator,
 )
-from airflow.utils.task_group import TaskGroup
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import TaskGroup
 from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
