@@ -14,6 +14,7 @@ venv/
 
 # Testing
 .pytest_cache/
+.ruff_cache
 htmlcov/
 .coverage
 
@@ -23,7 +24,7 @@ terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/.terraform.lock.hcl
 terraform/terraform.tfvars
-
+*terraform.tfvars
 # Airflow
 airflow/.env
 airflow/logs/
@@ -47,4 +48,3 @@ Thumbs.db
 *.csv
 data/
 
-.DS_Store
