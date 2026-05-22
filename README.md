@@ -31,10 +31,10 @@ A production-style batch data engineering pipeline that ingests NYC TLC taxi tri
                     │  │     Gold      │    │  ← Feature tables for ML
                     │  │  (features)   │    │
                     │  └───────────────┘    │
-                    └───────────┬───────────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │                 │                   │
+                    └──────────┬────────────┘
+                               │
+              ┌────────────────┼──────────────────┐
+              │                │                  │
      ┌────────▼──────┐  ┌──────▼───────┐  ┌───────▼───────┐
      │  Glue Catalog │  │    Athena    │  │ Data Science  │
      │  (Schema)     │  │   (SQL)      │  │  (Notebooks)  │
@@ -46,8 +46,8 @@ A production-style batch data engineering pipeline that ingests NYC TLC taxi tri
 | Source | Update Frequency | Format | Description |
 |--------|-----------------|--------|-------------|
 | NYC TLC Yellow Taxi | Monthly (~2 month lag) | Parquet | Trip records: pickups, dropoffs, fares, tips |
-| NYC TLC Green Taxi | Monthly (~2 month lag) | Parquet | Outer borough taxi trips |
-| NOAA Weather (NYC) | Daily | CSV → Parquet | Temperature, precipitation, wind for Central Park |
+| NYC TLC Green Taxi  | Monthly (~2 month lag) | Parquet | Outer borough taxi trips |
+| NOAA Weather (NYC)  | Daily | CSV → Parquet | Temperature, precipitation, wind for Central Park |
 
 ## Gold Feature Tables
 
@@ -64,11 +64,10 @@ Key columns: `trip_count`, `avg_distance`, `avg_fare`, `unique_destinations`, `t
 ## Prerequisites
 
 - **AWS Account** with CLI configured (`aws configure`)
-- **Terraform** >= 1.5 ([install](https://developer.hashicorp.com/terraform/install))
-- **Docker** & Docker Compose ([install](https://docs.docker.com/get-docker/))
-- **Python** 3.11+ ([install](https://www.python.org/downloads/))
-- **uv** ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- **Java 17** (for local PySpark tests only)
+- **Terraform** >= 1.5 
+- **Docker** & Docker Compose
+- **Python** 3.11+ 
+- **uv** 
 
 ## Quick Start
 
@@ -206,7 +205,7 @@ nyc-taxi-pipeline/
 │   └── Dockerfile                 # Uses requirements.lock for parity
 ├── tests/                         # Pytest test suite
 ├── scripts/                       # Helper scripts
-├── .github/workflows/ci.yml      # CI pipeline (uses uv)
+├── .github/workflows/ci.yml       # CI pipeline (uses uv)
 └── Makefile                       # Common commands (all use uv)
 ```
 
@@ -221,7 +220,7 @@ The pipeline is designed for extensibility. To add a new source:
 5. **Add tests** in `tests/`
 6. The S3 structure, Glue catalog, and IAM permissions already support new sources.
 
-## Cost Estimate (Monthly)
+## Cost Estimate (Monthly) 
 
 | Service | Usage | Cost |
 |---------|-------|------|

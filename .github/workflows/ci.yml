@@ -1,12 +1,13 @@
 # ============================================================================
 # CI Pipeline
 # ============================================================================
-# Runs on every push and PR. Validates:
+# Runs on every push and PR. pre-commit hooks for linting and formatting
+# Validates:
 # 1. Python code quality (linting with ruff)
 # 2. Unit tests (pytest with mocked AWS)
 # 3. Terraform validation (syntax + plan check)
 #
-# Uses uv for fast dependency installation (~10-20x faster than pip).
+# Uses uv for fast dependency installation (10-20x faster than pip ;)
 # ============================================================================
 
 name: CI Pipeline
