@@ -36,6 +36,12 @@ def create_spark_session(app_name: str = "bronze_to_silver_taxi") -> SparkSessio
         SparkSession.builder.appName(app_name)
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
         .config("spark.sql.parquet.compression.codec", "snappy")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config(
+            "spark.hadoop.hive.metastore.client.factory.class",
+            "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
+        )
+        .enableHiveSupport()
         .getOrCreate()
     )
 
