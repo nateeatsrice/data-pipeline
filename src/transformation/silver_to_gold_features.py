@@ -26,6 +26,12 @@ def create_spark_session() -> SparkSession:
     return (
         SparkSession.builder.appName("silver_to_gold_features")
         .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config(
+            "spark.hadoop.hive.metastore.client.factory.class",
+            "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
+        )
+        .enableHiveSupport()
         .getOrCreate()
     )
 
