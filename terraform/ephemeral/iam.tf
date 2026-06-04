@@ -37,44 +37,37 @@ resource "aws_iam_role_policy" "emr_s3_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ReadWriteDataLake"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.data_lake.arn,
-          "${aws_s3_bucket.data_lake.arn}/*"
-        ]
+        Sid      = "ListProjectPrefixes"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = "arn:aws:s3:::nateeatsrice-master-s3"
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "data-lake/*",
+              "scripts/data-pipeline/*",
+              "athena-results/data-pipeline/*"
+            ]
+          }
+        }
       },
       {
-        Sid    = "ReadScripts"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.scripts.arn,
-          "${aws_s3_bucket.scripts.arn}/*"
-        ]
+        Sid      = "ReadWriteDataLake"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = "arn:aws:s3:::nateeatsrice-master-s3/data-lake/*"
       },
       {
-        Sid    = "WriteAthenaResults"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
-        ]
-        Resource = [
-          aws_s3_bucket.athena_results.arn,
-          "${aws_s3_bucket.athena_results.arn}/*"
-        ]
+        Sid      = "ReadScripts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::nateeatsrice-master-s3/scripts/data-pipeline/*"
+      },
+      {
+        Sid      = "WriteAthenaResults"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "arn:aws:s3:::nateeatsrice-master-s3/athena-results/data-pipeline/*"
       }
     ]
   })
@@ -173,21 +166,28 @@ resource "aws_iam_role_policy" "pipeline_runner" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "S3DataAccess"
+        Sid      = "S3ListProjectPrefixes"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = "arn:aws:s3:::nateeatsrice-master-s3"
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [
+              "data-lake/*",
+              "scripts/data-pipeline/*",
+              "athena-results/data-pipeline/*"
+            ]
+          }
+        }
+      },
+      {
+        Sid    = "S3ObjectAccess"
         Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
-          aws_s3_bucket.data_lake.arn,
-          "${aws_s3_bucket.data_lake.arn}/*",
-          aws_s3_bucket.scripts.arn,
-          "${aws_s3_bucket.scripts.arn}/*",
-          aws_s3_bucket.athena_results.arn,
-          "${aws_s3_bucket.athena_results.arn}/*"
+          "arn:aws:s3:::nateeatsrice-master-s3/data-lake/*",
+          "arn:aws:s3:::nateeatsrice-master-s3/scripts/data-pipeline/*",
+          "arn:aws:s3:::nateeatsrice-master-s3/athena-results/data-pipeline/*"
         ]
       },
       {

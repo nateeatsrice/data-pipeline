@@ -14,7 +14,7 @@ resource "aws_athena_workgroup" "main" {
     enforce_workgroup_configuration = true
 
     result_configuration {
-      output_location = "s3://${aws_s3_bucket.athena_results.id}/query-results/"
+      output_location = "s3://nateeatsrice-master-s3/athena-results/data-pipeline/"
 
       encryption_configuration {
         encryption_option = "SSE_S3"

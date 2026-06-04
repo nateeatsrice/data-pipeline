@@ -19,12 +19,15 @@ htmlcov/
 .coverage
 
 # Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/.terraform.lock.hcl
-terraform/terraform.tfvars
-*terraform.tfvars
+# Terraform — ignore local cache & state at ANY depth (stacks live in subdirs)
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+# tfvars may contain sensitive values
+*.tfvars
+!*.tfvars.example
+# NOTE: .terraform.lock.hcl IS committed (pins provider versions)
 # Airflow
 airflow/.env
 airflow/logs/
