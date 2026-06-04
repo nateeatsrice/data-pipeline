@@ -36,7 +36,7 @@ def create_spark_session() -> SparkSession:
     )
 
 
-def build_trip_weather_daily(spark, data_bucket: str, silver_db: str):
+def build_trip_weather_daily(spark, data_root: str, silver_db: str):
     """
     Gold Table 1: trip_weather_daily
     Joins daily taxi aggregates with weather to answer:
@@ -129,7 +129,7 @@ def build_trip_weather_daily(spark, data_bucket: str, silver_db: str):
     return features
 
 
-def build_location_hourly_features(spark, data_bucket: str, silver_db: str):
+def build_location_hourly_features(spark, data_root: str, silver_db: str):
     """
     Gold Table 2: location_hourly_features
     Per-zone, per-hour aggregations for demand prediction.
@@ -176,7 +176,7 @@ def build_location_hourly_features(spark, data_bucket: str, silver_db: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-bucket", required=True)
+    parser.add_argument("--data-root", required=True)
     parser.add_argument("--silver-database", required=True)
     parser.add_argument("--gold-database", required=True)
     parser.add_argument("--year", type=int, required=True)
@@ -188,10 +188,10 @@ def main():
     try:
         # ── Gold Table 1: Trip + Weather Daily ──
         trip_weather = build_trip_weather_daily(
-            spark, args.data_bucket, args.silver_database
+            spark, args.data_root, args.silver_database
         )
 
-        gold_path_1 = f"s3://{args.data_bucket}/gold/features/trip_weather_daily/"
+        gold_path_1 = f"{args.data_root}/gold/features/trip_weather_daily/"
         (
             trip_weather.write.mode("overwrite")
             .partitionBy("year", "month")
@@ -203,10 +203,10 @@ def main():
 
         # ── Gold Table 2: Location Hourly Features ──
         location_features = build_location_hourly_features(
-            spark, args.data_bucket, args.silver_database
+            spark, args.data_root, args.silver_database
         )
 
-        gold_path_2 = f"s3://{args.data_bucket}/gold/features/location_hourly_features/"
+        gold_path_2 = f"{args.data_root}/gold/features/location_hourly_features/"
         (
             location_features.write.mode("overwrite")
             .partitionBy("year", "month")

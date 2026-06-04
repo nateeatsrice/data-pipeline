@@ -90,7 +90,7 @@ airflow-restart: ## Restart Airflow
 # ─── Deployment ────────────────────────────────────────────────────────────
 deploy-scripts: ## Upload PySpark scripts to S3
 	@echo "Uploading PySpark scripts to S3..."
-	aws s3 sync src/transformation/ s3://$${SCRIPTS_BUCKET}/spark-scripts/ \
+	aws s3 sync src/transformation/ $${SCRIPTS_LOCATION}/ \
 		--exclude "__pycache__/*" --exclude "*.pyc" --exclude "__init__.py"
 	@echo "Done!"
 

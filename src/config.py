@@ -7,7 +7,7 @@ environment variables (set by Terraform outputs) with sensible defaults.
 Usage:
     from src.config import Config
     config = Config()
-    print(config.DATA_BUCKET)
+    print(config.DATA_LAKE_ROOT)
 """
 
 import os
@@ -21,18 +21,18 @@ class Config:
 
     # AWS
     AWS_REGION: str = field(
-        default_factory=lambda: os.getenv("AWS_REGION", "us-east-1")
+        default_factory=lambda: os.getenv("AWS_REGION", "us-east-2")
     )
 
-    # S3 Buckets
-    DATA_BUCKET: str = field(
+    # S3 Locations (full URIs into the shared master bucket)
+    DATA_LAKE_ROOT: str = field(
         default_factory=lambda: os.getenv(
-            "DATA_BUCKET", "nyc-taxi-pipeline-data-lake-dev"
+            "DATA_LAKE_ROOT", "s3://nateeatsrice-master-s3/data-lake"
         )
     )
-    SCRIPTS_BUCKET: str = field(
+    SCRIPTS_LOCATION: str = field(
         default_factory=lambda: os.getenv(
-            "SCRIPTS_BUCKET", "nyc-taxi-pipeline-scripts-dev"
+            "SCRIPTS_LOCATION", "s3://nateeatsrice-master-s3/scripts/data-pipeline"
         )
     )
 
@@ -49,22 +49,18 @@ class Config:
 
     # Glue Databases
     GLUE_DB_BRONZE: str = field(
-        default_factory=lambda: os.getenv(
-            "GLUE_DB_BRONZE", "nyc_taxi_pipeline_bronze_dev"
-        )
+        default_factory=lambda: os.getenv("GLUE_DB_BRONZE", "data_pipeline_bronze_dev")
     )
     GLUE_DB_SILVER: str = field(
-        default_factory=lambda: os.getenv(
-            "GLUE_DB_SILVER", "nyc_taxi_pipeline_silver_dev"
-        )
+        default_factory=lambda: os.getenv("GLUE_DB_SILVER", "data_pipeline_silver_dev")
     )
     GLUE_DB_GOLD: str = field(
-        default_factory=lambda: os.getenv("GLUE_DB_GOLD", "nyc_taxi_pipeline_gold_dev")
+        default_factory=lambda: os.getenv("GLUE_DB_GOLD", "data_pipeline_gold_dev")
     )
 
     # Athena
     ATHENA_WORKGROUP: str = field(
-        default_factory=lambda: os.getenv("ATHENA_WORKGROUP", "nyc-taxi-pipeline-dev")
+        default_factory=lambda: os.getenv("ATHENA_WORKGROUP", "data-pipeline-dev")
     )
 
     # Data Source URLs
@@ -88,10 +84,22 @@ class Config:
             config.s3_path("bronze", "nyc_tlc", "yellow", 2025, 1)
             → "s3://bucket/bronze/nyc_tlc/yellow/year=2025/month=01/"
         """
-        path = f"s3://{self.DATA_BUCKET}/{layer}/{source}/{dataset}"
+        path = f"{self.DATA_LAKE_ROOT}/{layer}/{source}/{dataset}"
         if year and month:
             path += f"/year={year}/month={month:02d}"
         return path + "/"
+
+    @property
+    def data_bucket_name(self) -> str:
+        """Bare bucket name parsed from DATA_LAKE_ROOT (for boto3 calls)."""
+        return self.DATA_LAKE_ROOT.replace("s3://", "").split("/", 1)[0]
+
+    @property
+    def data_key_prefix(self) -> str:
+        """Key prefix under the bucket, e.g. 'data-lake' (no trailing slash)."""
+        no_scheme = self.DATA_LAKE_ROOT.replace("s3://", "").rstrip("/")
+        parts = no_scheme.split("/", 1)
+        return parts[1] if len(parts) > 1 else ""
 
     def get_latest_available_month(self) -> tuple[int, int]:
         """Return (year, month) of the most recent TLC data likely available."""

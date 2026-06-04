@@ -125,12 +125,22 @@ def check_s3_freshness(
 # ─── Composite Check Suites ─────────────────────────────────────────────────
 
 
+def _parse_data_root(data_root: str):
+    """Split an s3://bucket/base/prefix URI into (bucket, base_prefix)."""
+    no_scheme = data_root.replace("s3://", "").rstrip("/")
+    parts = no_scheme.split("/", 1)
+    bucket = parts[0]
+    base_prefix = (parts[1] + "/") if len(parts) > 1 else ""
+    return bucket, base_prefix
+
+
 def run_bronze_taxi_checks(
-    bucket: str, year: int, month: int, s3_client=None
+    data_root: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
     """Run all quality checks for bronze taxi data."""
     s3_client = s3_client or boto3.client("s3")
-    prefix = f"bronze/nyc_tlc/yellow/year={year}/month={month:02d}/"
+    bucket, base = _parse_data_root(data_root)
+    prefix = f"{base}bronze/nyc_tlc/yellow/year={year}/month={month:02d}/"
 
     results = [
         check_s3_object_exists(s3_client, bucket, prefix),
@@ -141,11 +151,12 @@ def run_bronze_taxi_checks(
 
 
 def run_silver_taxi_checks(
-    bucket: str, year: int, month: int, s3_client=None
+    data_root: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
     """Run all quality checks for silver taxi data."""
     s3_client = s3_client or boto3.client("s3")
-    prefix = f"silver/nyc_tlc/yellow/year={year}/month={month:02d}/"
+    bucket, base = _parse_data_root(data_root)
+    prefix = f"{base}silver/nyc_tlc/yellow/year={year}/month={month:02d}/"
 
     results = [
         check_s3_object_exists(s3_client, bucket, prefix),
@@ -156,14 +167,15 @@ def run_silver_taxi_checks(
 
 
 def run_gold_checks(
-    bucket: str, year: int, month: int, s3_client=None
+    data_root: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
     """Run all quality checks for gold feature tables."""
     s3_client = s3_client or boto3.client("s3")
+    bucket, base = _parse_data_root(data_root)
 
     results = []
     for table in ["trip_weather_daily", "location_hourly_features"]:
-        prefix = f"gold/features/{table}/year={year}/month={month:02d}/"
+        prefix = f"{base}gold/features/{table}/year={year}/month={month:02d}/"
         results.extend(
             [
                 check_s3_object_exists(s3_client, bucket, prefix),

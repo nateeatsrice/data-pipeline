@@ -109,7 +109,7 @@ def clean_weather(df):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-bucket", required=True)
+    parser.add_argument("--data-root", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--glue-database", required=True)
     args = parser.parse_args()
@@ -118,7 +118,7 @@ def main():
 
     try:
         bronze_path = (
-            f"s3://{args.data_bucket}/bronze/noaa_weather/nyc_daily/year={args.year}/"
+            f"{args.data_root}/bronze/noaa_weather/nyc_daily/year={args.year}/"
         )
         logger.info(f"Reading bronze weather from {bronze_path}")
         df = spark.read.parquet(bronze_path)
@@ -126,7 +126,7 @@ def main():
 
         df_clean = clean_weather(df)
 
-        silver_path = f"s3://{args.data_bucket}/silver/noaa_weather/nyc_daily/"
+        silver_path = f"{args.data_root}/silver/noaa_weather/nyc_daily/"
         logger.info(f"Writing silver weather to {silver_path}")
 
         (

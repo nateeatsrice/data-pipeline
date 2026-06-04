@@ -122,19 +122,19 @@ def ingest_yellow_taxi(
     filename = f"yellow_tripdata_{year}-{month:02d}.parquet"
     source_url = f"{config.NYC_TLC_BASE_URL}/{filename}"
     s3_key = (
-        f"{config.BRONZE_PREFIX}/nyc_tlc/yellow/"
+        f"{config.data_key_prefix}/{config.BRONZE_PREFIX}/nyc_tlc/yellow/"
         f"year={year}/month={month:02d}/{filename}"
     )
 
     try:
         # Check if already ingested
         if skip_existing and check_already_ingested(
-            s3_client, config.DATA_BUCKET, s3_key
+            s3_client, config.data_bucket_name, s3_key
         ):
             logger.info(f"Already ingested: {year}-{month:02d}. Skipping.")
             result["skipped"] = True
             result["success"] = True
-            result["s3_uri"] = f"s3://{config.DATA_BUCKET}/{s3_key}"
+            result["s3_uri"] = f"s3://{config.data_bucket_name}/{s3_key}"
             return result
 
         # Check if source exists
@@ -150,7 +150,9 @@ def ingest_yellow_taxi(
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / filename
             download_file(source_url, local_path)
-            s3_uri = upload_to_s3(s3_client, local_path, config.DATA_BUCKET, s3_key)
+            s3_uri = upload_to_s3(
+                s3_client, local_path, config.data_bucket_name, s3_key
+            )
 
         result["success"] = True
         result["s3_uri"] = s3_uri
@@ -185,18 +187,16 @@ def ingest_green_taxi(
 
     filename = f"green_tripdata_{year}-{month:02d}.parquet"
     source_url = f"{config.NYC_TLC_BASE_URL}/{filename}"
-    s3_key = (
-        f"{config.BRONZE_PREFIX}/nyc_tlc/green/year={year}/month={month:02d}/{filename}"
-    )
+    s3_key = f"{config.data_key_prefix}/{config.BRONZE_PREFIX}/nyc_tlc/green/year={year}/month={month:02d}/{filename}"
 
     try:
         if skip_existing and check_already_ingested(
-            s3_client, config.DATA_BUCKET, s3_key
+            s3_client, config.data_bucket_name, s3_key
         ):
             logger.info(f"Already ingested green {year}-{month:02d}. Skipping.")
             result["skipped"] = True
             result["success"] = True
-            result["s3_uri"] = f"s3://{config.DATA_BUCKET}/{s3_key}"
+            result["s3_uri"] = f"s3://{config.data_bucket_name}/{s3_key}"
             return result
 
         if not check_source_exists(source_url):
@@ -207,7 +207,9 @@ def ingest_green_taxi(
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / filename
             download_file(source_url, local_path)
-            s3_uri = upload_to_s3(s3_client, local_path, config.DATA_BUCKET, s3_key)
+            s3_uri = upload_to_s3(
+                s3_client, local_path, config.data_bucket_name, s3_key
+            )
 
         result["success"] = True
         result["s3_uri"] = s3_uri

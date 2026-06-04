@@ -185,15 +185,15 @@ def ingest_weather(
     }
 
     filename = f"nyc_weather_daily_{year}.parquet"
-    s3_key = f"{config.BRONZE_PREFIX}/noaa_weather/nyc_daily/year={year}/{filename}"
+    s3_key = f"{config.data_key_prefix}/{config.BRONZE_PREFIX}/noaa_weather/nyc_daily/year={year}/{filename}"
 
     try:
         # Check if already ingested
-        if skip_existing and _check_exists(s3_client, config.DATA_BUCKET, s3_key):
+        if skip_existing and _check_exists(s3_client, config.data_bucket_name, s3_key):
             logger.info(f"Weather {year} already ingested. Skipping.")
             result["skipped"] = True
             result["success"] = True
-            result["s3_uri"] = f"s3://{config.DATA_BUCKET}/{s3_key}"
+            result["s3_uri"] = f"s3://{config.data_bucket_name}/{s3_key}"
             return result
 
         # Download raw hourly data
@@ -208,11 +208,11 @@ def ingest_weather(
             local_path = Path(tmpdir) / filename
             daily_df.to_parquet(local_path, index=False, engine="pyarrow")
 
-            logger.info(f"Uploading to s3://{config.DATA_BUCKET}/{s3_key}")
-            s3_client.upload_file(str(local_path), config.DATA_BUCKET, s3_key)
+            logger.info(f"Uploading to s3://{config.data_bucket_name}/{s3_key}")
+            s3_client.upload_file(str(local_path), config.data_bucket_name, s3_key)
 
         result["success"] = True
-        result["s3_uri"] = f"s3://{config.DATA_BUCKET}/{s3_key}"
+        result["s3_uri"] = f"s3://{config.data_bucket_name}/{s3_key}"
         logger.info(f"Successfully ingested weather for {year}")
 
     except Exception as e:

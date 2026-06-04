@@ -14,7 +14,7 @@ passed in the Airflow DAG.
 
 Usage (local testing with spark-submit):
     spark-submit src/transformation/bronze_to_silver_taxi.py \
-        --data-bucket my-bucket \
+        --data-root s3://bucket/data-lake \
         --year 2024 --month 12 \
         --glue-database nyc_taxi_pipeline_silver_dev
 """
@@ -222,7 +222,7 @@ def write_silver(df, output_path: str, glue_database: str, table_name: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-bucket", required=True)
+    parser.add_argument("--data-root", required=True)
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--month", type=int, required=True)
     parser.add_argument("--glue-database", required=True)
@@ -233,7 +233,7 @@ def main():
     try:
         # Read bronze
         bronze_path = (
-            f"s3://{args.data_bucket}/bronze/nyc_tlc/yellow/"
+            f"{args.data_root}/bronze/nyc_tlc/yellow/"
             f"year={args.year}/month={args.month:02d}/"
         )
         df = read_bronze(spark, bronze_path)
@@ -242,7 +242,7 @@ def main():
         df_clean = clean_yellow_taxi(df)
 
         # Write silver
-        silver_path = f"s3://{args.data_bucket}/silver/nyc_tlc/yellow/"
+        silver_path = f"{args.data_root}/silver/nyc_tlc/yellow/"
         write_silver(df_clean, silver_path, args.glue_database, "yellow_taxi_trips")
 
         logger.info("Bronze → Silver transformation complete!")
