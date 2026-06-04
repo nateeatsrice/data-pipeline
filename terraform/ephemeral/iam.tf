@@ -37,9 +37,9 @@ resource "aws_iam_role_policy" "emr_s3_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ListProjectPrefixes"
-        Effect = "Allow"
-        Action = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Sid      = "ListProjectPrefixes"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
         Resource = "arn:aws:s3:::nateeatsrice-master-s3"
         Condition = {
           StringLike = {
@@ -52,21 +52,21 @@ resource "aws_iam_role_policy" "emr_s3_access" {
         }
       },
       {
-        Sid    = "ReadWriteDataLake"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Sid      = "ReadWriteDataLake"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = "arn:aws:s3:::nateeatsrice-master-s3/data-lake/*"
       },
       {
-        Sid    = "ReadScripts"
-        Effect = "Allow"
-        Action = ["s3:GetObject"]
+        Sid      = "ReadScripts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
         Resource = "arn:aws:s3:::nateeatsrice-master-s3/scripts/data-pipeline/*"
       },
       {
-        Sid    = "WriteAthenaResults"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
+        Sid      = "WriteAthenaResults"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "arn:aws:s3:::nateeatsrice-master-s3/athena-results/data-pipeline/*"
       }
     ]
@@ -166,9 +166,9 @@ resource "aws_iam_role_policy" "pipeline_runner" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "S3ListProjectPrefixes"
-        Effect = "Allow"
-        Action = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Sid      = "S3ListProjectPrefixes"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
         Resource = "arn:aws:s3:::nateeatsrice-master-s3"
         Condition = {
           StringLike = {
