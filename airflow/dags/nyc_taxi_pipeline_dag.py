@@ -36,14 +36,19 @@ logger = logging.getLogger(__name__)
 # These come from environment variables set in docker-compose or .env file.
 # They map to Terraform outputs.
 
-DATA_BUCKET = os.getenv("DATA_BUCKET", "nyc-taxi-pipeline-data-lake-dev")
-SCRIPTS_BUCKET = os.getenv("SCRIPTS_BUCKET", "nyc-taxi-pipeline-scripts-dev")
+DATA_LAKE_ROOT = os.getenv("DATA_LAKE_ROOT", "s3://nateeatsrice-master-s3/data-lake")
+SCRIPTS_LOCATION = os.getenv(
+    "SCRIPTS_LOCATION", "s3://nateeatsrice-master-s3/scripts/data-pipeline"
+)
+# Bare bucket name + key prefix for boto3 upload_file (needs name, not URI)
+MASTER_BUCKET = "nateeatsrice-master-s3"
+SCRIPTS_KEY_PREFIX = "scripts/data-pipeline"
 EMR_APP_ID = os.getenv("EMR_APP_ID", "")
 EMR_EXECUTION_ROLE_ARN = os.getenv("EMR_EXECUTION_ROLE_ARN", "")
-GLUE_DB_BRONZE = os.getenv("GLUE_DB_BRONZE", "nyc_taxi_pipeline_bronze_dev")
-GLUE_DB_SILVER = os.getenv("GLUE_DB_SILVER", "nyc_taxi_pipeline_silver_dev")
-GLUE_DB_GOLD = os.getenv("GLUE_DB_GOLD", "nyc_taxi_pipeline_gold_dev")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+GLUE_DB_BRONZE = os.getenv("GLUE_DB_BRONZE", "data_pipeline_bronze_dev")
+GLUE_DB_SILVER = os.getenv("GLUE_DB_SILVER", "data_pipeline_silver_dev")
+GLUE_DB_GOLD = os.getenv("GLUE_DB_GOLD", "data_pipeline_gold_dev")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
 
 # TLC publishes data with ~2 month lag, so for a run on 2025-03-05,
 # we process data for 2025-01 (the logical_date's month).
@@ -156,7 +161,7 @@ def run_quality_checks(check_type: str, **context):
         "gold": run_gold_checks,
     }
 
-    results = check_fns[check_type](DATA_BUCKET, year, month)
+    results = check_fns[check_type](DATA_LAKE_ROOT, year, month)
     passed = evaluate_results(results)
 
     if not passed:
@@ -174,9 +179,11 @@ def upload_spark_scripts(**context):
 
     for filepath in glob.glob(f"{script_dir}/*.py"):
         filename = os.path.basename(filepath)
-        s3_key = f"spark-scripts/{filename}"
-        logger.info(f"Uploading {filename} to s3://{SCRIPTS_BUCKET}/{s3_key}")
-        s3_client.upload_file(filepath, SCRIPTS_BUCKET, s3_key)
+        s3_key = f"{filename}"
+        logger.info(
+            f"Uploading {filename} to s3://{MASTER_BUCKET}/{SCRIPTS_KEY_PREFIX}/{s3_key}"
+        )
+        s3_client.upload_file(filepath, MASTER_BUCKET, f"{SCRIPTS_KEY_PREFIX}/{s3_key}")
 
 
 # ─── DAG Definition ──────────────────────────────────────────────────────────
@@ -231,12 +238,10 @@ with DAG(
             execution_role_arn=EMR_EXECUTION_ROLE_ARN,
             job_driver={
                 "sparkSubmit": {
-                    "entryPoint": (
-                        f"s3://{SCRIPTS_BUCKET}/spark-scripts/bronze_to_silver_taxi.py"
-                    ),
+                    "entryPoint": (f"{SCRIPTS_LOCATION}/bronze_to_silver_taxi.py"),
                     "entryPointArguments": [
-                        "--data-bucket",
-                        DATA_BUCKET,
+                        "--data-root",
+                        DATA_LAKE_ROOT,
                         "--year",
                         "{{ ti.xcom_pull(key='process_year') }}",
                         "--month",
@@ -257,7 +262,7 @@ with DAG(
             configuration_overrides={
                 "monitoringConfiguration": {
                     "s3MonitoringConfiguration": {
-                        "logUri": f"s3://{DATA_BUCKET}/emr-logs/"
+                        "logUri": f"{DATA_LAKE_ROOT}/emr-logs/"
                     }
                 }
             },
@@ -269,13 +274,10 @@ with DAG(
             execution_role_arn=EMR_EXECUTION_ROLE_ARN,
             job_driver={
                 "sparkSubmit": {
-                    "entryPoint": (
-                        f"s3://{SCRIPTS_BUCKET}/spark-scripts/"
-                        "bronze_to_silver_weather.py"
-                    ),
+                    "entryPoint": (f"{SCRIPTS_LOCATION}/bronze_to_silver_weather.py"),
                     "entryPointArguments": [
-                        "--data-bucket",
-                        DATA_BUCKET,
+                        "--data-root",
+                        DATA_LAKE_ROOT,
                         "--year",
                         "{{ ti.xcom_pull(key='process_year') }}",
                         "--glue-database",
@@ -294,7 +296,7 @@ with DAG(
             configuration_overrides={
                 "monitoringConfiguration": {
                     "s3MonitoringConfiguration": {
-                        "logUri": f"s3://{DATA_BUCKET}/emr-logs/"
+                        "logUri": f"{DATA_LAKE_ROOT}/emr-logs/"
                     }
                 }
             },
@@ -314,12 +316,10 @@ with DAG(
         execution_role_arn=EMR_EXECUTION_ROLE_ARN,
         job_driver={
             "sparkSubmit": {
-                "entryPoint": (
-                    f"s3://{SCRIPTS_BUCKET}/spark-scripts/silver_to_gold_features.py"
-                ),
+                "entryPoint": (f"{SCRIPTS_LOCATION}/silver_to_gold_features.py"),
                 "entryPointArguments": [
-                    "--data-bucket",
-                    DATA_BUCKET,
+                    "--data-root",
+                    DATA_LAKE_ROOT,
                     "--silver-database",
                     GLUE_DB_SILVER,
                     "--gold-database",
@@ -341,7 +341,7 @@ with DAG(
         },
         configuration_overrides={
             "monitoringConfiguration": {
-                "s3MonitoringConfiguration": {"logUri": f"s3://{DATA_BUCKET}/emr-logs/"}
+                "s3MonitoringConfiguration": {"logUri": f"{DATA_LAKE_ROOT}/emr-logs/"}
             }
         },
     )
