@@ -1,5 +1,6 @@
 ###############################################################################
-# Provider & Backend Configuration
+# Ephemeral Stack — Provider & Backend
+# Holds compute (EMR, Athena, IAM) that is safe to `terraform destroy`.
 ###############################################################################
 
 terraform {
@@ -12,16 +13,13 @@ terraform {
     }
   }
 
-  # For a student project, local state is fine.
-  # In production, you'd use an S3 backend with DynamoDB locking:
-  #
-  # backend "s3" {
-  #   bucket         = "your-terraform-state-bucket"
-  #   key            = "nyc-taxi-pipeline/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-locks"
-  #   encrypt        = true
-  # }
+  backend "s3" {
+    bucket         = "nateeatsrice-master-s3"
+    key            = "terraform-state/nyc-taxi-pipeline/ephemeral.tfstate"
+    region         = "us-east-2"
+    dynamodb_table = "nateeatsrice-tflock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
@@ -32,6 +30,5 @@ provider "aws" {
   }
 }
 
-# Used to get the current AWS account ID for IAM policies
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
