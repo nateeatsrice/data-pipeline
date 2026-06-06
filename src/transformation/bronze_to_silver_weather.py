@@ -37,7 +37,7 @@ def create_spark_session() -> SparkSession:
     )
 
 
-def clean_weather(df):
+def clean_weather(df, year: int):
     """Clean and validate weather data."""
 
     # Cast types
@@ -104,6 +104,14 @@ def clean_weather(df):
         .withColumn("month", F.month("date"))
     )
 
+    # Drop rows outside the requested year. The NOAA annual file spans all 12
+    # months of one year; any record resolving to a different year is bad data
+    # and would otherwise create a stray-year partition.
+    before_year = df.count()
+    df = df.filter(F.col("year") == year)
+    after_year = df.count()
+    logger.info(f"Dropped {before_year - after_year} weather rows outside year {year}")
+
     return df
 
 
@@ -124,7 +132,7 @@ def main():
         df = spark.read.parquet(bronze_path)
         logger.info(f"Bronze weather records: {df.count()}")
 
-        df_clean = clean_weather(df)
+        df_clean = clean_weather(df, args.year)
 
         silver_path = f"{args.data_root}/silver/noaa_weather/nyc_daily/"
         logger.info(f"Writing silver weather to {silver_path}")

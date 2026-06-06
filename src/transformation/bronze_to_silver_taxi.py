@@ -55,7 +55,7 @@ def read_bronze(spark: SparkSession, s3_path: str):
     return df
 
 
-def clean_yellow_taxi(df):
+def clean_yellow_taxi(df, year: int, month: int):
     """
     Apply cleaning rules for yellow taxi data.
 
@@ -185,6 +185,17 @@ def clean_yellow_taxi(df):
         .withColumn("month", F.month("pickup_datetime"))
     )
 
+    # Drop rows whose timestamp falls outside the period being processed.
+    # TLC source files contain occasional garbage timestamps (e.g. 2002, 2026)
+    # that would otherwise create stray-year partitions and leak into gold.
+    before_period = df.count()
+    df = df.filter((F.col("year") == year) & (F.col("month") == month))
+    after_period = df.count()
+    logger.info(
+        f"Dropped {before_period - after_period} rows outside period "
+        f"{year}-{month:02d} (out-of-range timestamps)"
+    )
+
     # ── Step 5: Deduplicate ──
     dedup_cols = [
         "vendor_id",
@@ -239,7 +250,7 @@ def main():
         df = read_bronze(spark, bronze_path)
 
         # Clean
-        df_clean = clean_yellow_taxi(df)
+        df_clean = clean_yellow_taxi(df, args.year, args.month)
 
         # Write silver
         silver_path = f"{args.data_root}/silver/nyc_tlc/yellow/"

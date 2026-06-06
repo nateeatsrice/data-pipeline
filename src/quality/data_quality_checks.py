@@ -134,6 +134,35 @@ def _parse_data_root(data_root: str):
     return bucket, base_prefix
 
 
+def check_no_unexpected_partitions(
+    s3_client, bucket: str, base_prefix: str, expected_year: int
+) -> CheckResult:
+    """Flag any year=/ partition under a silver/gold path that is not the
+    expected year. Catches stray-year partitions from bad source timestamps
+    leaking through the transforms (see issue #34)."""
+    # List the immediate year=XXXX/ prefixes under the table path.
+    resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=base_prefix, Delimiter="/")
+    prefixes = [p["Prefix"] for p in resp.get("CommonPrefixes", [])]
+    found_years = []
+    for p in prefixes:
+        # p looks like ".../year=2024/"
+        part = p.rstrip("/").split("/")[-1]
+        if part.startswith("year="):
+            found_years.append(part.split("=", 1)[1])
+
+    stray = [y for y in found_years if y != str(expected_year)]
+    passed = len(stray) == 0
+    return CheckResult(
+        check_name="no_unexpected_partitions",
+        passed=passed,
+        message=(
+            f"Only expected year={expected_year} present"
+            if passed
+            else f"STRAY partitions found: {sorted(stray)} (expected only {expected_year})"
+        ),
+    )
+
+
 def run_bronze_taxi_checks(
     data_root: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
@@ -157,11 +186,13 @@ def run_silver_taxi_checks(
     s3_client = s3_client or boto3.client("s3")
     bucket, base = _parse_data_root(data_root)
     prefix = f"{base}silver/nyc_tlc/yellow/year={year}/month={month:02d}/"
+    table_base = f"{base}silver/nyc_tlc/yellow/"
 
     results = [
         check_s3_object_exists(s3_client, bucket, prefix),
         check_s3_file_size(s3_client, bucket, prefix, min_bytes=5_000_000),
         check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=200),
+        check_no_unexpected_partitions(s3_client, bucket, table_base, year),
     ]
     return results
 
