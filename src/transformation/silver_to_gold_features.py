@@ -36,7 +36,9 @@ def create_spark_session() -> SparkSession:
     )
 
 
-def build_trip_weather_daily(spark, data_root: str, silver_db: str):
+def build_trip_weather_daily(
+    spark, data_root: str, silver_db: str, year: int, month: int
+):
     """
     Gold Table 1: trip_weather_daily
     Joins daily taxi aggregates with weather to answer:
@@ -118,6 +120,9 @@ def build_trip_weather_daily(spark, data_root: str, silver_db: str):
     features = features.withColumn("year", F.year("pickup_date")).withColumn(
         "month", F.month("pickup_date")
     )
+    # Restrict to the requested period so a stray-timestamp row in silver
+    # cannot create a stray gold partition (see issue #34).
+    features = features.filter((F.col("year") == year) & (F.col("month") == month))
 
     # Round all double columns to 2 decimal places for cleanliness
     double_cols = [
@@ -129,7 +134,9 @@ def build_trip_weather_daily(spark, data_root: str, silver_db: str):
     return features
 
 
-def build_location_hourly_features(spark, data_root: str, silver_db: str):
+def build_location_hourly_features(
+    spark, data_root: str, silver_db: str, year: int, month: int
+):
     """
     Gold Table 2: location_hourly_features
     Per-zone, per-hour aggregations for demand prediction.
@@ -170,6 +177,10 @@ def build_location_hourly_features(spark, data_root: str, silver_db: str):
         .withColumn("year", F.year("pickup_date"))
         .withColumn("month", F.month("pickup_date"))
     )
+    # Restrict to the requested period (see issue #34).
+    location_hourly = location_hourly.filter(
+        (F.col("year") == year) & (F.col("month") == month)
+    )
 
     return location_hourly
 
@@ -184,11 +195,13 @@ def main():
     args = parser.parse_args()
 
     spark = create_spark_session()
+    # Overwrite only the partitions being written, not the whole table.
+    spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
     try:
         # ── Gold Table 1: Trip + Weather Daily ──
         trip_weather = build_trip_weather_daily(
-            spark, args.data_root, args.silver_database
+            spark, args.data_root, args.silver_database, args.year, args.month
         )
 
         gold_path_1 = f"{args.data_root}/gold/features/trip_weather_daily/"
@@ -203,7 +216,7 @@ def main():
 
         # ── Gold Table 2: Location Hourly Features ──
         location_features = build_location_hourly_features(
-            spark, args.data_root, args.silver_database
+            spark, args.data_root, args.silver_database, args.year, args.month
         )
 
         gold_path_2 = f"{args.data_root}/gold/features/location_hourly_features/"

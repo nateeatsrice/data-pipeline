@@ -56,7 +56,7 @@ class TestBronzeToSilverTaxi:
         """Should rename TLC columns to snake_case."""
         from transformation.bronze_to_silver_taxi import clean_yellow_taxi
 
-        result = clean_yellow_taxi(sample_taxi_df)
+        result = clean_yellow_taxi(sample_taxi_df, 2024, 12)
         assert "vendor_id" in result.columns
         assert "pickup_datetime" in result.columns
         assert "dropoff_datetime" in result.columns
@@ -67,7 +67,7 @@ class TestBronzeToSilverTaxi:
         """Should add pickup_date, pickup_hour, trip_duration_minutes."""
         from transformation.bronze_to_silver_taxi import clean_yellow_taxi
 
-        result = clean_yellow_taxi(sample_taxi_df)
+        result = clean_yellow_taxi(sample_taxi_df, 2024, 12)
         assert "pickup_date" in result.columns
         assert "pickup_hour" in result.columns
         assert "pickup_day_of_week" in result.columns
@@ -78,7 +78,7 @@ class TestBronzeToSilverTaxi:
         """Should correctly calculate trip duration in minutes."""
         from transformation.bronze_to_silver_taxi import clean_yellow_taxi
 
-        result = clean_yellow_taxi(sample_taxi_df)
+        result = clean_yellow_taxi(sample_taxi_df, 2024, 12)
         # First trip: 08:30 to 08:45 = 15 minutes
         first_trip = result.orderBy("pickup_datetime").first()
         assert first_trip["trip_duration_minutes"] == pytest.approx(15.0, abs=0.1)
@@ -131,7 +131,7 @@ class TestBronzeToSilverTaxi:
         ]
 
         df = spark.createDataFrame(data)
-        result = clean_yellow_taxi(df)
+        result = clean_yellow_taxi(df, 2024, 12)
         assert result.count() == 1  # Only valid record survives
 
     def test_deduplication(self, spark):
@@ -160,7 +160,7 @@ class TestBronzeToSilverTaxi:
         }
 
         df = spark.createDataFrame([record, record])
-        result = clean_yellow_taxi(df)
+        result = clean_yellow_taxi(df, 2024, 12)
         assert result.count() == 1
 
 
@@ -195,7 +195,7 @@ class TestBronzeToSilverWeather:
         ]
 
         df = spark.createDataFrame(data)
-        result = clean_weather(df)
+        result = clean_weather(df, 2024)
         assert result.count() == 1
 
     def test_fahrenheit_conversion(self, spark):
@@ -215,7 +215,7 @@ class TestBronzeToSilverWeather:
         ]
 
         df = spark.createDataFrame(data)
-        result = clean_weather(df)
+        result = clean_weather(df, 2024)
         row = result.first()
         assert row["temp_avg_fahrenheit"] == pytest.approx(32.0, abs=0.1)
 
@@ -245,7 +245,7 @@ class TestBronzeToSilverWeather:
         ]
 
         df = spark.createDataFrame(data)
-        result = clean_weather(df)
+        result = clean_weather(df, 2024)
         rows = {row["date"].isoformat(): row for row in result.collect()}
         assert rows["2024-12-15"]["is_rainy"] is True
         assert rows["2024-12-16"]["is_rainy"] is False

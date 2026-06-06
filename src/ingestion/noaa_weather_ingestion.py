@@ -152,9 +152,11 @@ def process_noaa_to_daily(df: pd.DataFrame) -> pd.DataFrame:
         "temp_min_celsius",
         "temp_max_celsius",
         "wind_avg_ms",
+        "precip_total_mm",
     ]:
-        daily[col] = daily[col].round(1)
-    daily["precip_total_mm"] = daily["precip_total_mm"].round(1)
+        # Coerce to numeric before rounding — newer pandas raises on
+        # object-dtype .round() instead of silently coercing.
+        daily[col] = pd.to_numeric(daily[col], errors="coerce").round(1)
 
     logger.info(f"Aggregated to {len(daily)} daily records")
     return daily

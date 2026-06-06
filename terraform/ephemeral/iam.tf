@@ -94,6 +94,7 @@ resource "aws_iam_role_policy" "emr_glue_access" {
           "glue:GetPartitions",
           "glue:CreateTable",
           "glue:UpdateTable",
+          "glue:DeleteTable",
           "glue:CreatePartition",
           "glue:BatchCreatePartition",
           "glue:DeletePartition",
