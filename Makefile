@@ -60,21 +60,24 @@ format: ## Format code
 
 # ─── Terraform ─────────────────────────────────────────────────────────────
 terraform-init: ## Initialize Terraform
-	cd terraform && terraform init
+	terraform -chdir=terraform/ephemeral init
+	terraform -chdir=terraform/persistent init
 
 terraform-plan: ## Preview Terraform changes
-	cd terraform && terraform plan
+	terraform -chdir=terraform/ephemeral plan
+	terraform -chdir=terraform/persistent plan
 
 terraform-apply: ## Apply ephemeral stack + regenerate airflow/.env
 	terraform -chdir=terraform/ephemeral apply
 	./scripts/setup_env.sh
 	@echo "Now run: set -a && source airflow/.env && set +a"
 
-terraform-destroy: ## Destroy all Terraform resources
-	cd terraform && terraform destroy
+terraform-destroy: ## Destroy all ephemeral Terraform resources
+	terraform -chdir=terraform/ephemeral destroy
 
 terraform-output: ## Show Terraform outputs (for .env file)
-	cd terraform && terraform output -json
+	terraform -chdir=terraform/ephemeral output -json
+	terraform -chdir=terraform/persistent output -json
 
 # ─── Airflow ───────────────────────────────────────────────────────────────
 airflow-up: lock ## Start local Airflow (rebuilds if requirements.lock changed)
@@ -156,7 +159,7 @@ month: _require_year _require_month ## Full month: silver-taxi then gold. YEAR=2
 	@$(MAKE) silver-taxi YEAR=$(YEAR) MONTH=$(MONTH)
 	@$(MAKE) gold YEAR=$(YEAR) MONTH=$(MONTH)
 
-_poll:
+_poll:  ## checks the status of the EMR run. status can be PENDING, SCHEDULED, RUNNING, SUCCESS, FAILED.
 	@set -a && . airflow/.env && set +a && \
 	echo "  submitted $(NAME) -> $(JOB)" && \
 	while true; do \
