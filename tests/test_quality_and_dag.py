@@ -113,8 +113,11 @@ class TestAirflowDag:
             # Check key tasks exist
             assert "determine_processing_period" in task_ids
             assert "upload_spark_scripts" in task_ids
-            assert "check_bronze_quality" in task_ids
-            assert "check_silver_quality" in task_ids
+            # Quality-check tasks are namespaced under their TaskGroups
+            assert "bronze_checks.check_bronze_quality" in task_ids
+            assert "bronze_checks.check_bronze_weather_quality" in task_ids
+            assert "silver_checks.check_silver_quality" in task_ids
+            assert "silver_checks.check_silver_weather_quality" in task_ids
             assert "build_gold_features" in task_ids
             assert "check_gold_quality" in task_ids
 
