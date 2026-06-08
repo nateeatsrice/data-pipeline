@@ -147,8 +147,10 @@ def run_quality_checks(check_type: str, **context):
     from quality.data_quality_checks import (
         evaluate_results,
         run_bronze_taxi_checks,
+        run_bronze_weather_checks,
         run_gold_checks,
         run_silver_taxi_checks,
+        run_silver_weather_checks,
     )
 
     ti = context["ti"]
@@ -158,6 +160,8 @@ def run_quality_checks(check_type: str, **context):
     check_fns = {
         "bronze_taxi": run_bronze_taxi_checks,
         "silver_taxi": run_silver_taxi_checks,
+        "bronze_weather": run_bronze_weather_checks,
+        "silver_weather": run_silver_weather_checks,
         "gold": run_gold_checks,
     }
 
@@ -223,11 +227,17 @@ with DAG(
         )
 
     # ── Step 3: Bronze quality checks ──
-    check_bronze = PythonOperator(
-        task_id="check_bronze_quality",
-        python_callable=run_quality_checks,
-        op_kwargs={"check_type": "bronze_taxi"},
-    )
+    with TaskGroup("bronze_checks") as bronze_check_group:
+        check_bronze = PythonOperator(
+            task_id="check_bronze_quality",
+            python_callable=run_quality_checks,
+            op_kwargs={"check_type": "bronze_taxi"},
+        )
+        check_bronze_weather = PythonOperator(
+            task_id="check_bronze_weather_quality",
+            python_callable=run_quality_checks,
+            op_kwargs={"check_type": "bronze_weather"},
+        )
 
     # ── Step 4: Bronze → Silver (EMR Serverless) ──
     # These use Airflow's EMR Serverless operators to submit and monitor jobs.
@@ -303,11 +313,17 @@ with DAG(
         )
 
     # ── Step 5: Silver quality checks ──
-    check_silver = PythonOperator(
-        task_id="check_silver_quality",
-        python_callable=run_quality_checks,
-        op_kwargs={"check_type": "silver_taxi"},
-    )
+    with TaskGroup("silver_checks") as silver_check_group:
+        check_silver = PythonOperator(
+            task_id="check_silver_quality",
+            python_callable=run_quality_checks,
+            op_kwargs={"check_type": "silver_taxi"},
+        )
+        check_silver_weather = PythonOperator(
+            task_id="check_silver_weather_quality",
+            python_callable=run_quality_checks,
+            op_kwargs={"check_type": "silver_weather"},
+        )
 
     # ── Step 6: Silver → Gold (EMR Serverless) ──
     s2g_features = EmrServerlessStartJobOperator(
@@ -360,13 +376,12 @@ with DAG(
     #     → check_bronze → [transform_taxi, transform_weather]
     #     → check_silver → build_gold_features → check_gold
 
-    (
-        determine_period
-        >> upload_scripts
-        >> ingestion_group
-        >> check_bronze
-        >> b2s_group
-        >> check_silver
-        >> s2g_features
-        >> check_gold
-    )
+    determine_period >> upload_scripts >> ingestion_group
+
+    # Bronze checks (taxi + weather) run in parallel, both gate the transform
+    ingestion_group >> bronze_check_group >> b2s_group
+
+    # Silver checks (taxi + weather) run in parallel, both gate gold
+    b2s_group >> silver_check_group >> s2g_features
+
+    s2g_features >> check_gold

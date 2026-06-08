@@ -179,6 +179,28 @@ def run_bronze_taxi_checks(
     return results
 
 
+def run_bronze_weather_checks(
+    data_root: str, year: int, month: int, s3_client=None
+) -> list[CheckResult]:
+    """Run quality checks for bronze weather data (annual NOAA file).
+
+    month is accepted for signature consistency with the other suites but
+    is unused — NOAA bronze is a single annual file, not month-partitioned.
+    """
+    s3_client = s3_client or boto3.client("s3")
+    bucket, base = _parse_data_root(data_root)
+    prefix = f"{base}bronze/noaa_weather/nyc_daily/year={year}/"
+
+    # Weather files are small (one annual parquet of daily records), so the
+    # size/count thresholds are much smaller than taxi.
+    results = [
+        check_s3_object_exists(s3_client, bucket, prefix),
+        check_s3_file_size(s3_client, bucket, prefix, min_bytes=1000),
+        check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=5),
+    ]
+    return results
+
+
 def run_silver_taxi_checks(
     data_root: str, year: int, month: int, s3_client=None
 ) -> list[CheckResult]:
@@ -192,6 +214,28 @@ def run_silver_taxi_checks(
         check_s3_object_exists(s3_client, bucket, prefix),
         check_s3_file_size(s3_client, bucket, prefix, min_bytes=5_000_000),
         check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=200),
+        check_no_unexpected_partitions(s3_client, bucket, table_base, year),
+    ]
+    return results
+
+
+def run_silver_weather_checks(
+    data_root: str, year: int, month: int, s3_client=None
+) -> list[CheckResult]:
+    """Run quality checks for silver weather data.
+
+    month is accepted for signature consistency but unused — the annual
+    NOAA file is processed per-year and partitioned across all 12 months.
+    """
+    s3_client = s3_client or boto3.client("s3")
+    bucket, base = _parse_data_root(data_root)
+    prefix = f"{base}silver/noaa_weather/nyc_daily/year={year}/"
+    table_base = f"{base}silver/noaa_weather/nyc_daily/"
+
+    results = [
+        check_s3_object_exists(s3_client, bucket, prefix),
+        check_s3_file_size(s3_client, bucket, prefix, min_bytes=1000),
+        check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=50),
         check_no_unexpected_partitions(s3_client, bucket, table_base, year),
     ]
     return results
@@ -239,7 +283,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--check",
         required=True,
-        choices=["bronze_taxi", "silver_taxi", "gold"],
+        choices=[
+            "bronze_taxi",
+            "silver_taxi",
+            "bronze_weather",
+            "silver_weather",
+            "gold",
+        ],
     )
     parser.add_argument("--bucket", required=True)
     parser.add_argument("--year", type=int, required=True)
@@ -249,6 +299,8 @@ if __name__ == "__main__":
     check_fns = {
         "bronze_taxi": run_bronze_taxi_checks,
         "silver_taxi": run_silver_taxi_checks,
+        "bronze_weather": run_bronze_weather_checks,
+        "silver_weather": run_silver_weather_checks,
         "gold": run_gold_checks,
     }
 
