@@ -71,7 +71,7 @@ jobs:
           uv run pytest tests/test_ingestion.py tests/test_quality_and_dag.py \
             -v --tb=short -x
         env:
-          AWS_DEFAULT_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-2
           AWS_ACCESS_KEY_ID: testing
           AWS_SECRET_ACCESS_KEY: testing
 
@@ -103,7 +103,7 @@ jobs:
         run: |
           uv run pytest tests/test_transformations.py -v --tb=short -x
         env:
-          AWS_DEFAULT_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-2
           AWS_ACCESS_KEY_ID: testing
           AWS_SECRET_ACCESS_KEY: testing
 
