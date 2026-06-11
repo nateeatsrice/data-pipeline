@@ -12,7 +12,7 @@ Usage:
 
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -103,7 +103,7 @@ class Config:
 
     def get_latest_available_month(self) -> tuple[int, int]:
         """Return (year, month) of the most recent TLC data likely available."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)  # depreciated: now = datetime.utcnow()
         # Subtract publication lag
         month = now.month - self.TLC_PUBLICATION_LAG_MONTHS
         year = now.year
