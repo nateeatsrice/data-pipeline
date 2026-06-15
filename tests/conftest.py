@@ -16,14 +16,14 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Set test environment variables before any imports
-os.environ["AWS_REGION"] = "us-east-1"
+os.environ["AWS_REGION"] = "us-east-2"
 os.environ["DATA_BUCKET"] = "test-data-lake"
 os.environ["SCRIPTS_BUCKET"] = "test-scripts"
 os.environ["AWS_ACCESS_KEY_ID"] = "testing"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 os.environ["AWS_SECURITY_TOKEN"] = "testing"
 os.environ["AWS_SESSION_TOKEN"] = "testing"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+os.environ["AWS_DEFAULT_REGION"] = "us-east-2"
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def mock_s3_client():
         from moto import mock_aws
 
         with mock_aws():
-            client = boto3.client("s3", region_name="us-east-1")
+            client = boto3.client("s3", region_name="us-east-2")
             # Create test buckets
             client.create_bucket(Bucket="test-data-lake")
             client.create_bucket(Bucket="test-scripts")
@@ -52,7 +52,7 @@ def test_config():
     config = Config()
     config.DATA_BUCKET = "test-data-lake"
     config.SCRIPTS_BUCKET = "test-scripts"
-    config.AWS_REGION = "us-east-1"
+    config.AWS_REGION = "us-east-2"
     return config
 
 

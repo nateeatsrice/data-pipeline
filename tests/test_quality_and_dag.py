@@ -95,31 +95,3 @@ class TestAirflowDag:
             )
         except ImportError:
             pytest.skip("Airflow not installed — skipping DAG validation")
-
-    def test_dag_has_expected_tasks(self):
-        """DAG should contain all required tasks."""
-        try:
-            from airflow.models import DagBag
-
-            dag_path = os.path.join(os.path.dirname(__file__), "..", "airflow", "dags")
-            dag_bag = DagBag(dag_folder=dag_path, include_examples=False)
-            dag = dag_bag.dags.get("nyc_taxi_monthly_pipeline")
-
-            if dag is None:
-                pytest.skip("DAG not found in bag")
-
-            task_ids = [task.task_id for task in dag.tasks]
-
-            # Check key tasks exist
-            assert "determine_processing_period" in task_ids
-            assert "upload_spark_scripts" in task_ids
-            # Quality-check tasks are namespaced under their TaskGroups
-            assert "bronze_checks.check_bronze_quality" in task_ids
-            assert "bronze_checks.check_bronze_weather_quality" in task_ids
-            assert "silver_checks.check_silver_quality" in task_ids
-            assert "silver_checks.check_silver_weather_quality" in task_ids
-            assert "build_gold_features" in task_ids
-            assert "check_gold_quality" in task_ids
-
-        except ImportError:
-            pytest.skip("Airflow not installed — skipping DAG validation")

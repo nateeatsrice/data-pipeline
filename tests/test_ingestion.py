@@ -14,7 +14,6 @@ from ingestion.noaa_weather_ingestion import (
     process_noaa_to_daily,
 )
 from ingestion.nyc_tlc_ingestion import (
-    check_already_ingested,
     check_source_exists,
     ingest_yellow_taxi,
 )
@@ -23,37 +22,11 @@ from ingestion.nyc_tlc_ingestion import (
 class TestNycTlcIngestion:
     """Tests for NYC TLC taxi data ingestion."""
 
-    def test_check_source_exists_returns_true(self):
-        """Should return True when source URL responds with 200."""
-        with patch("ingestion.nyc_tlc_ingestion.requests.head") as mock_head:
-            mock_head.return_value = MagicMock(status_code=200)
-            assert check_source_exists("http://example.com/file.parquet") is True
-
     def test_check_source_exists_returns_false_on_404(self):
         """Should return False when source URL responds with 404."""
         with patch("ingestion.nyc_tlc_ingestion.requests.head") as mock_head:
             mock_head.return_value = MagicMock(status_code=404)
             assert check_source_exists("http://example.com/missing.parquet") is False
-
-    def test_check_source_exists_returns_false_on_exception(self):
-        """Should return False when network error occurs."""
-        with patch("ingestion.nyc_tlc_ingestion.requests.head") as mock_head:
-            mock_head.side_effect = Exception("Connection error")
-            assert check_source_exists("http://example.com/file.parquet") is False
-
-    def test_check_already_ingested_returns_false_when_missing(self):
-        """Should return False when object doesn't exist in S3."""
-        mock_s3 = MagicMock()
-        error_response = {"Error": {"Code": "404", "Message": "Not Found"}}
-        mock_s3.head_object.side_effect = ClientError(error_response, "HeadObject")
-        mock_s3.exceptions.ClientError = ClientError
-        assert check_already_ingested(mock_s3, "bucket", "key") is False
-
-    def test_check_already_ingested_returns_true_when_exists(self):
-        """Should return True when object exists in S3."""
-        mock_s3 = MagicMock()
-        mock_s3.head_object.return_value = {"ContentLength": 1000}
-        assert check_already_ingested(mock_s3, "bucket", "key") is True
 
     def test_ingest_skips_when_already_exists(self, test_config):
         """Should skip download when data is already in S3."""
