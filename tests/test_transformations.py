@@ -366,3 +366,169 @@ class TestBronzeToSilverWeather:
         result = clean_weather(df, 2024)
         years = {row["year"] for row in result.collect()}
         assert years == {2024}
+
+
+@pytest.mark.skipif(not SPARK_AVAILABLE, reason="PySpark not installed")
+class TestSilverToGold:
+    """Tests for gold feature-table aggregation math."""
+
+    def _register_silver_tables(self, spark, taxi_rows, weather_rows, db):
+        """Create the silver catalog tables the gold builders read from."""
+        spark.sql(f"CREATE DATABASE IF NOT EXISTS {db}")
+        spark.createDataFrame(taxi_rows).write.mode("overwrite").saveAsTable(
+            f"{db}.yellow_taxi_trips"
+        )
+        spark.createDataFrame(weather_rows).write.mode("overwrite").saveAsTable(
+            f"{db}.nyc_weather_daily"
+        )
+
+    def test_trip_weather_daily_exact_aggregates(self, spark):
+        """Daily trip aggregates should compute exact known values."""
+        from transformation.silver_to_gold_features import build_trip_weather_daily
+
+        taxi_rows = [
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 8,
+                "pickup_location_id": 100,
+                "dropoff_location_id": 200,
+                "passenger_count": 2,
+                "trip_distance": 3.0,
+                "trip_duration_minutes": 10.0,
+                "fare_amount": 10.0,
+                "tip_amount": 2.0,
+                "total_amount": 14.0,
+                "payment_type": 1,
+            },
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 8,
+                "pickup_location_id": 101,
+                "dropoff_location_id": 201,
+                "passenger_count": 1,
+                "trip_distance": 5.0,
+                "trip_duration_minutes": 20.0,
+                "fare_amount": 20.0,
+                "tip_amount": 4.0,
+                "total_amount": 26.0,
+                "payment_type": 2,
+            },
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 17,
+                "pickup_location_id": 102,
+                "dropoff_location_id": 202,
+                "passenger_count": 3,
+                "trip_distance": 1.0,
+                "trip_duration_minutes": 6.0,
+                "fare_amount": 6.0,
+                "tip_amount": 0.0,
+                "total_amount": 6.0,
+                "payment_type": 1,
+            },
+        ]
+        weather_rows = [
+            {
+                "date": "2024-12-15",
+                "temp_avg_celsius": 5.0,
+                "temp_avg_fahrenheit": 41.0,
+                "temp_min_celsius": 2.0,
+                "temp_max_celsius": 8.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "is_rainy": False,
+                "is_snowy": False,
+            },
+        ]
+
+        self._register_silver_tables(spark, taxi_rows, weather_rows, "silver_g2g_a")
+        result = build_trip_weather_daily(
+            spark, "s3://unused", "silver_g2g_a", 2024, 12
+        )
+        row = result.first()
+
+        assert row["total_trips"] == 3
+        assert row["total_passengers"] == 6
+        assert row["avg_fare"] == pytest.approx(12.0, abs=0.01)  # (10+20+6)/3
+        assert row["total_revenue"] == pytest.approx(46.0, abs=0.01)  # 14+26+6
+        assert row["credit_card_trips"] == 2  # payment_type 1, two trips
+        assert row["cash_trips"] == 1
+        assert row["morning_rush_trips"] == 2  # hour 8 is within 6-9
+        assert row["evening_rush_trips"] == 1  # hour 17 is within 16-19
+
+    def test_location_hourly_exact_aggregates(self, spark):
+        """Per date+hour+zone aggregates should compute exact known values."""
+        from transformation.silver_to_gold_features import (
+            build_location_hourly_features,
+        )
+
+        # All on the same date and hour. Two trips in zone 100, one in
+        # zone 999. The grain is (date, hour, location), so each zone is
+        # its own group here.
+        taxi_rows = [
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 8,
+                "pickup_location_id": 100,
+                "dropoff_location_id": 200,
+                "passenger_count": 1,
+                "trip_distance": 2.0,
+                "trip_duration_minutes": 10.0,
+                "fare_amount": 10.0,
+                "tip_amount": 2.0,
+                "total_amount": 12.0,
+                "payment_type": 1,
+            },
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 8,
+                "pickup_location_id": 100,
+                "dropoff_location_id": 201,
+                "passenger_count": 1,
+                "trip_distance": 4.0,
+                "trip_duration_minutes": 20.0,
+                "fare_amount": 20.0,
+                "tip_amount": 4.0,
+                "total_amount": 24.0,
+                "payment_type": 1,
+            },
+            {
+                "pickup_date": "2024-12-15",
+                "pickup_hour": 8,
+                "pickup_location_id": 999,
+                "dropoff_location_id": 200,
+                "passenger_count": 1,
+                "trip_distance": 1.0,
+                "trip_duration_minutes": 5.0,
+                "fare_amount": 5.0,
+                "tip_amount": 1.0,
+                "total_amount": 6.0,
+                "payment_type": 1,
+            },
+        ]
+        weather_rows = [
+            {
+                "date": "2024-12-15",
+                "temp_avg_celsius": 5.0,
+                "temp_avg_fahrenheit": 41.0,
+                "temp_min_celsius": 2.0,
+                "temp_max_celsius": 8.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "is_rainy": False,
+                "is_snowy": False,
+            },
+        ]
+
+        self._register_silver_tables(spark, taxi_rows, weather_rows, "silver_g2g_b")
+        result = build_location_hourly_features(
+            spark, "s3://unused", "silver_g2g_b", 2024, 12
+        )
+        # Key by location; safe here because all rows share one date+hour.
+        rows = {row["pickup_location_id"]: row for row in result.collect()}
+
+        assert rows[100]["trip_count"] == 2
+        assert rows[100]["avg_distance"] == pytest.approx(3.0, abs=0.01)  # (2+4)/2
+        assert rows[100]["total_revenue"] == pytest.approx(36.0, abs=0.01)  # 12+24
+        assert rows[100]["unique_destinations"] == 2  # zones 200, 201
+        assert rows[999]["trip_count"] == 1
