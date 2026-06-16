@@ -249,3 +249,120 @@ class TestBronzeToSilverWeather:
         rows = {row["date"].isoformat(): row for row in result.collect()}
         assert rows["2024-12-15"]["is_rainy"] is True
         assert rows["2024-12-16"]["is_rainy"] is False
+
+    def test_interpolates_single_day_temperature_gap(self, spark):
+        """Should fill a null temp_avg using the mean of neighbor days."""
+        from transformation.bronze_to_silver_weather import clean_weather
+
+        # Interior null: 2024-12-16 has no temp_avg; neighbors are 4.0
+        # and 8.0, so interpolation should yield (4.0 + 8.0) / 2 = 6.0.
+        data = [
+            {
+                "date": "2024-12-15",
+                "temp_avg_celsius": 4.0,
+                "temp_min_celsius": 1.0,
+                "temp_max_celsius": 7.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+            {
+                "date": "2024-12-16",
+                "temp_avg_celsius": None,
+                "temp_min_celsius": 2.0,
+                "temp_max_celsius": 9.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+            {
+                "date": "2024-12-17",
+                "temp_avg_celsius": 8.0,
+                "temp_min_celsius": 3.0,
+                "temp_max_celsius": 11.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+        ]
+
+        df = spark.createDataFrame(data)
+        result = clean_weather(df, 2024)
+        rows = {row["date"].isoformat(): row for row in result.collect()}
+        assert rows["2024-12-16"]["temp_avg_celsius"] == pytest.approx(6.0, abs=0.1)
+
+    def test_is_snowy_requires_precip_and_freezing(self, spark):
+        """Should set is_snowy only when precip > 0.5mm AND temp <= 1.0C."""
+        from transformation.bronze_to_silver_weather import clean_weather
+
+        data = [
+            # Snowy: wet and freezing
+            {
+                "date": "2024-12-15",
+                "temp_avg_celsius": 0.0,
+                "temp_min_celsius": -3.0,
+                "temp_max_celsius": 2.0,
+                "precip_total_mm": 5.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+            # Rainy not snowy: wet but warm
+            {
+                "date": "2024-12-16",
+                "temp_avg_celsius": 10.0,
+                "temp_min_celsius": 6.0,
+                "temp_max_celsius": 14.0,
+                "precip_total_mm": 5.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+            # Neither: freezing but dry
+            {
+                "date": "2024-12-17",
+                "temp_avg_celsius": -2.0,
+                "temp_min_celsius": -5.0,
+                "temp_max_celsius": 1.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+        ]
+
+        df = spark.createDataFrame(data)
+        result = clean_weather(df, 2024)
+        rows = {row["date"].isoformat(): row for row in result.collect()}
+        assert rows["2024-12-15"]["is_snowy"] is True
+        assert rows["2024-12-16"]["is_snowy"] is False
+        assert rows["2024-12-17"]["is_snowy"] is False
+
+    def test_drops_rows_outside_requested_year(self, spark):
+        """Should drop stray-year rows that would create bad partitions."""
+        from transformation.bronze_to_silver_weather import clean_weather
+
+        # This is the real bug we saw in gold: a stray-year row leaking
+        # through. The year filter should drop the 2002 record.
+        data = [
+            {
+                "date": "2024-12-15",
+                "temp_avg_celsius": 5.0,
+                "temp_min_celsius": 2.0,
+                "temp_max_celsius": 8.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+            {
+                "date": "2002-07-04",
+                "temp_avg_celsius": 25.0,
+                "temp_min_celsius": 20.0,
+                "temp_max_celsius": 30.0,
+                "precip_total_mm": 0.0,
+                "wind_avg_ms": 3.0,
+                "observation_count": 24,
+            },
+        ]
+
+        df = spark.createDataFrame(data)
+        result = clean_weather(df, 2024)
+        years = {row["year"] for row in result.collect()}
+        assert years == {2024}
