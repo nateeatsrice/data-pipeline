@@ -595,3 +595,52 @@ class TestReconciliationAndStats:
             )
         assert result.passed is False
         assert result.severity == "warn"
+
+
+class TestSuiteWiring:
+    """Tests for tier-1-first gating in the composite suites."""
+
+    def test_silver_taxi_skips_tier2_when_tier1_fails(self):
+        """If a tier 1 check fails, tier 2 Athena checks are skipped."""
+        from quality import data_quality_checks as dq
+
+        # Make the first tier 1 check fail; Athena client should never be
+        # created/used, so patch run_athena_query to blow up if called.
+        failing = dq.CheckResult("s3_object_exists", False, "missing")
+        with (
+            patch.object(dq, "check_s3_object_exists", return_value=failing),
+            patch.object(dq, "run_athena_query", side_effect=AssertionError("called!")),
+        ):
+            results = dq.run_silver_taxi_checks(
+                "s3://b/data-lake", 2024, 12, s3_client=MagicMock()
+            )
+        # Only tier 1 results present; no tier 2 ran.
+        assert any(not r.passed for r in results)
+        assert all(
+            r.check_name not in ("row_count_floor", "null_rates", "value_ranges")
+            for r in results
+        )
+
+    def test_silver_weather_runs_completeness_when_tier1_passes(self):
+        """When tier 1 passes, the weather suite runs the completeness check."""
+        from quality import data_quality_checks as dq
+
+        passing = dq.CheckResult("t1", True, "ok")
+        completeness = dq.CheckResult("calendar_completeness", True, "ok")
+        with (
+            patch.object(dq, "check_s3_object_exists", return_value=passing),
+            patch.object(dq, "check_s3_file_size", return_value=passing),
+            patch.object(dq, "check_s3_file_count", return_value=passing),
+            patch.object(dq, "check_no_unexpected_partitions", return_value=passing),
+            patch.object(
+                dq, "check_calendar_completeness", return_value=completeness
+            ) as mock_cc,
+        ):
+            dq.run_silver_weather_checks(
+                "s3://b/data-lake",
+                2024,
+                12,
+                s3_client=MagicMock(),
+                athena_client=MagicMock(),
+            )
+        assert mock_cc.called

@@ -802,32 +802,91 @@ def run_bronze_weather_checks(
 
 
 def run_silver_taxi_checks(
-    data_root: str, year: int, month: int, s3_client=None
+    data_root: str,
+    year: int,
+    month: int,
+    s3_client=None,
+    athena_client=None,
+    config=None,
 ) -> list[CheckResult]:
-    """Run all quality checks for silver taxi data."""
+    """Run all quality checks for silver taxi data.
+
+    Tier 1 (cheap S3 metadata) runs first. Only if every Tier 1 check
+    passes do we run Tier 2 (Athena content checks), so we never spend
+    on Athena when the data isn't even present.
+    """
+    from config import Config
+
     s3_client = s3_client or boto3.client("s3")
+    config = config or Config()
     bucket, base = _parse_data_root(data_root)
     prefix = f"{base}silver/nyc_tlc/yellow/year={year}/month={month:02d}/"
     table_base = f"{base}silver/nyc_tlc/yellow/"
 
+    # Tier 1: cheap S3 metadata checks.
     results = [
         check_s3_object_exists(s3_client, bucket, prefix),
         check_s3_file_size(s3_client, bucket, prefix, min_bytes=5_000_000),
         check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=200),
         check_no_unexpected_partitions(s3_client, bucket, table_base, year),
     ]
+
+    # Gate: skip Athena checks if any Tier 1 (blocking) check failed.
+    if not all(r.passed for r in results if r.severity == "error"):
+        logger.info("Tier 1 checks failed; skipping Tier 2 Athena checks")
+        return results
+
+    athena_client = athena_client or boto3.client("athena")
+    table = "yellow_taxi_trips"
+    results.extend(
+        [
+            check_row_count_floor(athena_client, config, table, year, month),
+            check_row_count_trend(athena_client, config, table, year, month),
+            check_null_rates(
+                athena_client,
+                config,
+                table,
+                year,
+                month,
+                columns=["pickup_datetime", "pickup_location_id", "fare_amount"],
+            ),
+            check_value_ranges(
+                athena_client,
+                config,
+                table,
+                year,
+                month,
+                rules={
+                    # (low, high, inclusive_low, inclusive_high)
+                    "fare_amount": (0, 1000, False, True),
+                    "trip_distance": (0, 200, False, True),
+                    "passenger_count": (1, 8, True, True),
+                    "pickup_location_id": (1, 265, True, True),
+                },
+            ),
+            check_dates_in_partition(athena_client, config, table, year, month),
+        ]
+    )
     return results
 
 
 def run_silver_weather_checks(
-    data_root: str, year: int, month: int, s3_client=None
+    data_root: str,
+    year: int,
+    month: int,
+    s3_client=None,
+    athena_client=None,
+    config=None,
 ) -> list[CheckResult]:
     """Run quality checks for silver weather data.
 
-    month is accepted for signature consistency but unused — the annual
-    NOAA file is processed per-year and partitioned across all 12 months.
+    Tier 1 first, then Tier 2 (calendar completeness) only if Tier 1
+    passed.
     """
+    from config import Config
+
     s3_client = s3_client or boto3.client("s3")
+    config = config or Config()
     bucket, base = _parse_data_root(data_root)
     prefix = f"{base}silver/noaa_weather/nyc_daily/year={year}/"
     table_base = f"{base}silver/noaa_weather/nyc_daily/"
@@ -838,14 +897,43 @@ def run_silver_weather_checks(
         check_s3_file_count(s3_client, bucket, prefix, min_files=1, max_files=50),
         check_no_unexpected_partitions(s3_client, bucket, table_base, year),
     ]
+
+    if not all(r.passed for r in results if r.severity == "error"):
+        logger.info("Tier 1 checks failed; skipping Tier 2 Athena checks")
+        return results
+
+    athena_client = athena_client or boto3.client("athena")
+    results.append(
+        check_calendar_completeness(
+            athena_client,
+            config,
+            config.GLUE_DB_SILVER,
+            "nyc_weather_daily",
+            year,
+            month,
+            date_column="date",
+        )
+    )
     return results
 
 
 def run_gold_checks(
-    data_root: str, year: int, month: int, s3_client=None
+    data_root: str,
+    year: int,
+    month: int,
+    s3_client=None,
+    athena_client=None,
+    config=None,
 ) -> list[CheckResult]:
-    """Run all quality checks for gold feature tables."""
+    """Run all quality checks for gold feature tables.
+
+    Tier 1 S3 checks per table first; then Tier 2 (reconciliation,
+    completeness, stat bounds) only if Tier 1 passed.
+    """
+    from config import Config
+
     s3_client = s3_client or boto3.client("s3")
+    config = config or Config()
     bucket, base = _parse_data_root(data_root)
 
     results = []
@@ -858,6 +946,37 @@ def run_gold_checks(
             ]
         )
 
+    if not all(r.passed for r in results if r.severity == "error"):
+        logger.info("Tier 1 checks failed; skipping Tier 2 Athena checks")
+        return results
+
+    athena_client = athena_client or boto3.client("athena")
+    results.extend(
+        [
+            check_gold_reconciliation(athena_client, config, year, month),
+            check_calendar_completeness(
+                athena_client,
+                config,
+                config.GLUE_DB_GOLD,
+                "trip_weather_daily",
+                year,
+                month,
+                date_column="date",
+            ),
+            check_stat_bounds(
+                athena_client,
+                config,
+                config.GLUE_DB_GOLD,
+                "trip_weather_daily",
+                year,
+                month,
+                "AVG(avg_fare)",
+                5,
+                50,
+                metric_name="avg_fare",
+            ),
+        ]
+    )
     return results
 
 
