@@ -153,6 +153,288 @@ def _parse_athena_results(athena_client, query_id: str) -> list[dict]:
     return rows
 
 
+# ─── Tier 2: Athena Content Checks ──────────────────────────────────────────
+
+# Row-count floor for silver taxi. NYC yellow does ~3M trips/month; 1M is a
+# conservative floor that still catches a badly truncated load.
+SILVER_TAXI_MIN_ROWS = 1_000_000
+
+# Trend tolerance: a month within +/-50% of the trailing 3-month average is
+# considered normal. Wide because monthly taxi volume genuinely swings with
+# season and events; this only catches gross anomalies (a near-empty or
+# doubled load), not normal variation.
+ROW_COUNT_TREND_TOLERANCE = 0.5
+
+
+def _athena_count(athena_client, config, database: str, sql: str) -> int:
+    """Run a COUNT query and return the integer in its single cell.
+
+    Helper for the count-based checks. Expects sql to select exactly one
+    numeric column in one row (e.g. SELECT COUNT(*) AS n ...).
+    """
+    rows = run_athena_query(
+        athena_client,
+        sql,
+        database=database,
+        workgroup=config.ATHENA_WORKGROUP,
+        output_location=config.ATHENA_OUTPUT_LOCATION,
+    )
+    # rows is [{column_name: "value"}]; take the first (only) value.
+    first_value = next(iter(rows[0].values()))
+    return int(first_value)
+
+
+def check_row_count_floor(
+    athena_client,
+    config,
+    table: str,
+    year: int,
+    month: int,
+    min_rows: int = SILVER_TAXI_MIN_ROWS,
+) -> CheckResult:
+    """Fail if the month's row count is below an absolute floor.
+
+    Catches a load that silently truncated (e.g. a partial file or a
+    transform that dropped most rows). [error]
+    """
+    sql = f"SELECT COUNT(*) AS n FROM {table} WHERE year = {year} AND month = {month}"
+    count = _athena_count(athena_client, config, config.GLUE_DB_SILVER, sql)
+    passed = count >= min_rows
+    return CheckResult(
+        check_name="row_count_floor",
+        passed=passed,
+        message=f"Row count {count:,} (floor: {min_rows:,})",
+        metric_value=count,
+        threshold=min_rows,
+        severity="error",
+    )
+
+
+def check_row_count_trend(
+    athena_client,
+    config,
+    table: str,
+    year: int,
+    month: int,
+    tolerance: float = ROW_COUNT_TREND_TOLERANCE,
+) -> CheckResult:
+    """Warn if the month's row count deviates sharply from recent history.
+
+    Compares this month to the average of the trailing 3 months. If fewer
+    than 3 prior months exist, auto-passes (not enough history to judge).
+    [warn] — seasonal swings are normal, so this informs rather than blocks.
+    """
+    # Pull this month and the 3 prior months, counting rows per month.
+    # We compute the trailing window in SQL by listing the 4 (year, month)
+    # pairs; simpler and cheaper than date math in Athena.
+    months = _trailing_months(year, month, n=4)  # includes current month
+    pairs = ", ".join(f"({y}, {m})" for (y, m) in months)
+    sql = (
+        f"SELECT year, month, COUNT(*) AS n FROM {table} "
+        f"WHERE (year, month) IN ({pairs}) "
+        f"GROUP BY year, month"
+    )
+    rows = run_athena_query(
+        athena_client,
+        sql,
+        database=config.GLUE_DB_SILVER,
+        workgroup=config.ATHENA_WORKGROUP,
+        output_location=config.ATHENA_OUTPUT_LOCATION,
+    )
+    counts = {(int(r["year"]), int(r["month"])): int(r["n"]) for r in rows}
+
+    current = counts.get((year, month), 0)
+    prior = [counts.get((y, m), 0) for (y, m) in months if (y, m) != (year, month)]
+    prior_present = [c for c in prior if c > 0]
+
+    if len(prior_present) < 3:
+        return CheckResult(
+            check_name="row_count_trend",
+            passed=True,
+            message=(
+                f"Only {len(prior_present)} prior month(s) of history; "
+                "skipping trend check"
+            ),
+            severity="warn",
+        )
+
+    avg = sum(prior_present) / len(prior_present)
+    lower = avg * (1 - tolerance)
+    upper = avg * (1 + tolerance)
+    passed = lower <= current <= upper
+    return CheckResult(
+        check_name="row_count_trend",
+        passed=passed,
+        message=(
+            f"Row count {current:,} vs trailing avg {avg:,.0f} "
+            f"(allowed {lower:,.0f}-{upper:,.0f})"
+        ),
+        metric_value=current,
+        threshold=avg,
+        severity="warn",
+    )
+
+
+def _trailing_months(year: int, month: int, n: int) -> list[tuple[int, int]]:
+    """Return the n most recent (year, month) pairs ending at (year, month).
+
+    e.g. _trailing_months(2024, 2, 4) -> [(2023,11),(2023,12),(2024,1),(2024,2)]
+    Handles year rollover.
+    """
+    result = []
+    y, m = year, month
+    for _ in range(n):
+        result.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    return sorted(result)
+
+
+# Max acceptable NULL rate per column. 1% allows for rare legitimately-missing
+# values without letting a broken column (mostly null) slip through.
+MAX_NULL_PCT = 0.01
+
+# Max acceptable range-violation rate per rule. 0.5% tolerates a handful of
+# genuine outliers while catching systematic bad data (wrong units, corruption).
+MAX_RANGE_VIOLATION_PCT = 0.005
+
+
+def check_null_rates(
+    athena_client,
+    config,
+    table: str,
+    year: int,
+    month: int,
+    columns: list[str],
+    max_null_pct: float = MAX_NULL_PCT,
+) -> CheckResult:
+    """Fail if any critical column's NULL rate exceeds the threshold.
+
+    Computes NULL percentage per column in a single Athena pass. [error]
+    """
+    # One null-rate expression per column, all in one query.
+    exprs = ", ".join(
+        f'SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS "{col}"'
+        for col in columns
+    )
+    sql = f"SELECT {exprs} FROM {table} WHERE year = {year} AND month = {month}"
+    rows = run_athena_query(
+        athena_client,
+        sql,
+        database=config.GLUE_DB_SILVER,
+        workgroup=config.ATHENA_WORKGROUP,
+        output_location=config.ATHENA_OUTPUT_LOCATION,
+    )
+    row = rows[0]
+    violations = {
+        col: float(row[col]) for col in columns if float(row[col]) > max_null_pct
+    }
+    passed = len(violations) == 0
+    if passed:
+        message = f"All {len(columns)} columns within {max_null_pct:.1%} null rate"
+    else:
+        detail = ", ".join(f"{c}={p:.2%}" for c, p in violations.items())
+        message = f"NULL rate exceeded ({max_null_pct:.1%}): {detail}"
+    return CheckResult(
+        check_name="null_rates",
+        passed=passed,
+        message=message,
+        severity="error",
+    )
+
+
+def check_value_ranges(
+    athena_client,
+    config,
+    table: str,
+    year: int,
+    month: int,
+    rules: dict,
+    max_violation_pct: float = MAX_RANGE_VIOLATION_PCT,
+) -> CheckResult:
+    """Fail if any column's out-of-range rate exceeds the threshold.
+
+    rules maps column -> (low, high, inclusive_low, inclusive_high). Computes
+    the violation percentage per rule in one Athena pass. [error]
+    """
+    # Build one violation-rate expression per rule.
+    exprs = []
+    for col, (low, high, incl_low, incl_high) in rules.items():
+        lo_op = "<" if incl_low else "<="
+        hi_op = ">" if incl_high else ">="
+        # A row violates if it's below the low bound or above the high bound.
+        exprs.append(
+            f"SUM(CASE WHEN {col} {lo_op} {low} OR {col} {hi_op} {high} "
+            f'THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS "{col}"'
+        )
+    sql = (
+        f"SELECT {', '.join(exprs)} FROM {table} "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    rows = run_athena_query(
+        athena_client,
+        sql,
+        database=config.GLUE_DB_SILVER,
+        workgroup=config.ATHENA_WORKGROUP,
+        output_location=config.ATHENA_OUTPUT_LOCATION,
+    )
+    row = rows[0]
+    violations = {
+        col: float(row[col]) for col in rules if float(row[col]) > max_violation_pct
+    }
+    passed = len(violations) == 0
+    if passed:
+        message = f"All {len(rules)} range rules within {max_violation_pct:.1%}"
+    else:
+        detail = ", ".join(f"{c}={p:.2%}" for c, p in violations.items())
+        message = f"Range violations exceeded ({max_violation_pct:.1%}): {detail}"
+    return CheckResult(
+        check_name="value_ranges",
+        passed=passed,
+        message=message,
+        severity="error",
+    )
+
+
+def check_dates_in_partition(
+    athena_client,
+    config,
+    table: str,
+    year: int,
+    month: int,
+) -> CheckResult:
+    """Fail if any row's pickup_date falls outside the partition's month.
+
+    Catches records whose actual date does not match the year/month
+    partition they were written into (bad source timestamps). [error]
+
+    NOTE: assumes Athena partition metadata is in sync with S3. If
+    partitions were recently added, run MSCK REPAIR TABLE first.
+    """
+    # Count rows where pickup_date is outside [first day, last day] of month.
+    sql = (
+        f"SELECT COUNT(*) AS n FROM {table} "
+        f"WHERE year = {year} AND month = {month} "
+        f"AND (year(pickup_date) <> {year} OR month(pickup_date) <> {month})"
+    )
+    count = _athena_count(athena_client, config, config.GLUE_DB_SILVER, sql)
+    passed = count == 0
+    return CheckResult(
+        check_name="dates_in_partition",
+        passed=passed,
+        message=(
+            "All pickup_date values fall within the partition month"
+            if passed
+            else f"{count:,} rows have pickup_date outside {year}-{month:02d}"
+        ),
+        metric_value=count,
+        threshold=0,
+        severity="error",
+    )
+
+
 # ─── Check Functions ────────────────────────────────────────────────────────
 
 # list_objects_v2 output dict structure for context

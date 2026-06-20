@@ -63,6 +63,13 @@ class Config:
         default_factory=lambda: os.getenv("ATHENA_WORKGROUP", "data-pipeline-dev")
     )
 
+    ATHENA_OUTPUT_LOCATION: str = field(
+        default_factory=lambda: os.getenv(
+            "ATHENA_OUTPUT_LOCATION",
+            "s3://nateeatsrice-master-s3/athena-results/",
+        )
+    )
+
     # Data Source URLs
     NYC_TLC_BASE_URL: str = "https://d37ci6vzurychx.cloudfront.net/trip-data"
     NOAA_BASE_URL: str = "https://www.ncei.noaa.gov/data/global-hourly/access"
