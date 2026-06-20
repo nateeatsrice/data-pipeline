@@ -75,6 +75,26 @@ class TestDataQualityChecks:
         ]
         assert evaluate_results(results) is False
 
+    def test_evaluate_results_warn_failure_does_not_block(self):
+        """A failed warn-severity check logs but does not fail the suite."""
+        from quality.data_quality_checks import CheckResult, evaluate_results
+
+        results = [
+            CheckResult("a", True, "ok"),
+            CheckResult("b", False, "soft fail", severity="warn"),
+        ]
+        assert evaluate_results(results) is True
+
+    def test_evaluate_results_error_failure_blocks(self):
+        """A failed error-severity check fails the suite (default)."""
+        from quality.data_quality_checks import CheckResult, evaluate_results
+
+        results = [
+            CheckResult("a", True, "ok"),
+            CheckResult("b", False, "hard fail"),  # severity defaults to error
+        ]
+        assert evaluate_results(results) is False
+
     def test_s3_freshness_recent_passes(self):
         """Recent data (within max_age) should pass the freshness check."""
         from datetime import UTC, datetime, timedelta
@@ -192,3 +212,45 @@ class TestAirflowDag:
             )
         except ImportError:
             pytest.skip("Airflow not installed — skipping DAG validation")
+
+
+class TestAthenaHelper:
+    """Tests for the Athena query helper's parsing and state logic."""
+
+    def test_parse_results_maps_headers_and_nulls(self):
+        """First row is headers; missing VarCharValue becomes None."""
+        from quality.data_quality_checks import _parse_athena_results
+
+        mock_athena = MagicMock()
+        mock_athena.get_query_results.return_value = {
+            "ResultSet": {
+                "Rows": [
+                    {"Data": [{"VarCharValue": "cnt"}, {"VarCharValue": "name"}]},
+                    {"Data": [{"VarCharValue": "5"}, {"VarCharValue": "a"}]},
+                    {"Data": [{"VarCharValue": "0"}, {}]},  # NULL in 2nd col
+                ]
+            }
+            # no NextToken -> single page
+        }
+        rows = _parse_athena_results(mock_athena, "qid")
+        assert rows == [
+            {"cnt": "5", "name": "a"},
+            {"cnt": "0", "name": None},
+        ]
+
+    def test_query_failure_raises(self):
+        """A FAILED query state should raise RuntimeError with the reason."""
+        from quality.data_quality_checks import run_athena_query
+
+        mock_athena = MagicMock()
+        mock_athena.start_query_execution.return_value = {"QueryExecutionId": "qid"}
+        mock_athena.get_query_execution.return_value = {
+            "QueryExecution": {
+                "Status": {
+                    "State": "FAILED",
+                    "StateChangeReason": "SYNTAX_ERROR: bad column",
+                }
+            }
+        }
+        with pytest.raises(RuntimeError, match="FAILED"):
+            run_athena_query(mock_athena, "SELECT 1", "db", "wg", "s3://out/")
