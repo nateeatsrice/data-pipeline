@@ -444,3 +444,154 @@ class TestContentChecks:
             )
         assert result.passed is False
         assert result.metric_value == 42
+
+
+class TestCompletenessAndCrossLayer:
+    """Tests for calendar completeness and cross-layer count checks."""
+
+    def _config(self):
+        from config import Config
+
+        return Config()
+
+    def test_calendar_completeness_all_days_present(self):
+        """All days present (31 for December) passes."""
+        from quality import data_quality_checks as dq
+
+        with patch.object(dq, "run_athena_query", return_value=[{"n": "31"}]):
+            result = dq.check_calendar_completeness(
+                MagicMock(), self._config(), "db", "t", 2024, 12, "date"
+            )
+        assert result.passed is True
+
+    def test_calendar_completeness_missing_day_fails(self):
+        """A missing day (30 of 31) fails."""
+        from quality import data_quality_checks as dq
+
+        with patch.object(dq, "run_athena_query", return_value=[{"n": "30"}]):
+            result = dq.check_calendar_completeness(
+                MagicMock(), self._config(), "db", "t", 2024, 12, "date"
+            )
+        assert result.passed is False
+
+    def test_calendar_completeness_handles_february_leap(self):
+        """February 2024 (leap year) expects 29 days."""
+        from quality import data_quality_checks as dq
+
+        with patch.object(dq, "run_athena_query", return_value=[{"n": "29"}]):
+            result = dq.check_calendar_completeness(
+                MagicMock(), self._config(), "db", "t", 2024, 2, "date"
+            )
+        assert result.passed is True
+
+    def test_cross_layer_counts_pass_normal_retention(self):
+        """Silver below bronze and above min retention passes."""
+        from quality import data_quality_checks as dq
+
+        # bronze 1000, silver 900 -> 90% retention.
+        with patch.object(
+            dq, "run_athena_query", side_effect=[[{"n": "1000"}], [{"n": "900"}]]
+        ):
+            result = dq.check_cross_layer_counts(
+                MagicMock(), self._config(), "b", "s", 2024, 12
+            )
+        assert result.passed is True
+
+    def test_cross_layer_counts_fail_over_filtering(self):
+        """Silver far below bronze (under min retention) fails."""
+        from quality import data_quality_checks as dq
+
+        # bronze 1000, silver 100 -> 10% retention, under 50%.
+        with patch.object(
+            dq, "run_athena_query", side_effect=[[{"n": "1000"}], [{"n": "100"}]]
+        ):
+            result = dq.check_cross_layer_counts(
+                MagicMock(), self._config(), "b", "s", 2024, 12
+            )
+        assert result.passed is False
+
+    def test_cross_layer_counts_fail_silver_exceeds_bronze(self):
+        """Silver larger than bronze (impossible) fails."""
+        from quality import data_quality_checks as dq
+
+        # bronze 1000, silver 1200 -> silver > bronze, invalid.
+        with patch.object(
+            dq, "run_athena_query", side_effect=[[{"n": "1000"}], [{"n": "1200"}]]
+        ):
+            result = dq.check_cross_layer_counts(
+                MagicMock(), self._config(), "b", "s", 2024, 12
+            )
+        assert result.passed is False
+
+
+class TestReconciliationAndStats:
+    """Tests for gold reconciliation and statistical-bounds checks."""
+
+    def _config(self):
+        from config import Config
+
+        return Config()
+
+    def test_gold_reconciliation_exact_match_passes(self):
+        """Gold trip total equal to silver row count passes."""
+        from quality import data_quality_checks as dq
+
+        # gold sum 1000, silver count 1000 -> match.
+        with patch.object(
+            dq, "run_athena_query", side_effect=[[{"n": "1000"}], [{"n": "1000"}]]
+        ):
+            result = dq.check_gold_reconciliation(MagicMock(), self._config(), 2024, 12)
+        assert result.passed is True
+
+    def test_gold_reconciliation_mismatch_fails(self):
+        """Any difference between gold and silver totals fails."""
+        from quality import data_quality_checks as dq
+
+        # gold 990, silver 1000 -> 10 trips lost in aggregation.
+        with patch.object(
+            dq, "run_athena_query", side_effect=[[{"n": "990"}], [{"n": "1000"}]]
+        ):
+            result = dq.check_gold_reconciliation(MagicMock(), self._config(), 2024, 12)
+        assert result.passed is False
+        assert "MISMATCH" in result.message
+
+    def test_stat_bounds_within_range_passes(self):
+        """A metric inside the expected range passes."""
+        from quality import data_quality_checks as dq
+
+        # avg fare 18.50, within [5, 50].
+        with patch.object(dq, "run_athena_query", return_value=[{"n": "18.5"}]):
+            result = dq.check_stat_bounds(
+                MagicMock(),
+                self._config(),
+                "db",
+                "t",
+                2024,
+                12,
+                "AVG(fare_amount)",
+                5,
+                50,
+                metric_name="avg_fare",
+            )
+        assert result.passed is True
+
+    def test_stat_bounds_outside_range_warns(self):
+        """A metric outside the range fails but with warn severity."""
+        from quality import data_quality_checks as dq
+
+        # avg fare 120, above [5, 50].
+        with patch.object(dq, "run_athena_query", return_value=[{"n": "120.0"}]):
+            result = dq.check_stat_bounds(
+                MagicMock(),
+                self._config(),
+                "db",
+                "t",
+                2024,
+                12,
+                "AVG(fare_amount)",
+                5,
+                50,
+                metric_name="avg_fare",
+            )
+        assert result.passed is False
+        assert result.severity == "warn"

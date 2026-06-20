@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import calendar
 import logging
 import sys
 import time
@@ -432,6 +433,181 @@ def check_dates_in_partition(
         metric_value=count,
         threshold=0,
         severity="error",
+    )
+
+
+# Minimum fraction of bronze rows that must survive into silver. Below this,
+# the transform is filtering too aggressively (a bug), not just cleaning.
+MIN_SILVER_RETENTION = 0.5
+
+
+def check_calendar_completeness(
+    athena_client,
+    config,
+    database: str,
+    table: str,
+    year: int,
+    month: int,
+    date_column: str,
+) -> CheckResult:
+    """Fail if any calendar day of the month is missing from the table.
+
+    Counts distinct dates present and compares to the number of days in
+    the month. Catches gaps (a missing day of weather or gold). [error]
+    """
+    sql = (
+        f"SELECT COUNT(DISTINCT {date_column}) AS n FROM {table} "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    present = _athena_count(athena_client, config, database, sql)
+    days_in_month = calendar.monthrange(year, month)[1]
+    passed = present == days_in_month
+    return CheckResult(
+        check_name="calendar_completeness",
+        passed=passed,
+        message=(
+            f"All {days_in_month} days present"
+            if passed
+            else f"Only {present}/{days_in_month} days present for {year}-{month:02d}"
+        ),
+        metric_value=present,
+        threshold=days_in_month,
+        severity="error",
+    )
+
+
+def check_cross_layer_counts(
+    athena_client,
+    config,
+    bronze_table: str,
+    silver_table: str,
+    year: int,
+    month: int,
+    min_retention: float = MIN_SILVER_RETENTION,
+) -> CheckResult:
+    """Fail if silver row count is implausible vs bronze.
+
+    Silver must be <= bronze (cleaning only removes rows) AND >= a minimum
+    fraction of bronze (catches over-aggressive filtering). [error]
+
+    NOTE: requires the bronze table to be registered in Glue (issue #50).
+    Until then this check cannot run against real data.
+    """
+    bronze_sql = (
+        f"SELECT COUNT(*) AS n FROM {bronze_table} "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    silver_sql = (
+        f"SELECT COUNT(*) AS n FROM {silver_table} "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    bronze_count = _athena_count(
+        athena_client, config, config.GLUE_DB_BRONZE, bronze_sql
+    )
+    silver_count = _athena_count(
+        athena_client, config, config.GLUE_DB_SILVER, silver_sql
+    )
+
+    if bronze_count == 0:
+        return CheckResult(
+            check_name="cross_layer_counts",
+            passed=False,
+            message="Bronze count is 0; cannot compare layers",
+            severity="error",
+        )
+
+    retention = silver_count / bronze_count
+    passed = silver_count <= bronze_count and retention >= min_retention
+    return CheckResult(
+        check_name="cross_layer_counts",
+        passed=passed,
+        message=(
+            f"Silver {silver_count:,} / Bronze {bronze_count:,} "
+            f"(retention {retention:.1%}, min {min_retention:.0%})"
+        ),
+        metric_value=retention,
+        threshold=min_retention,
+        severity="error",
+    )
+
+
+def check_gold_reconciliation(
+    athena_client,
+    config,
+    year: int,
+    month: int,
+) -> CheckResult:
+    """Fail if gold trip totals don't exactly match silver row count.
+
+    sum(total_trips) in gold trip_weather_daily must equal the silver taxi
+    row count for the month. Proves the gold aggregation neither dropped
+    nor duplicated trips. [error]
+    """
+    gold_sql = (
+        f"SELECT SUM(total_trips) AS n FROM trip_weather_daily "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    silver_sql = (
+        f"SELECT COUNT(*) AS n FROM yellow_taxi_trips "
+        f"WHERE year = {year} AND month = {month}"
+    )
+    gold_total = _athena_count(athena_client, config, config.GLUE_DB_GOLD, gold_sql)
+    silver_total = _athena_count(
+        athena_client, config, config.GLUE_DB_SILVER, silver_sql
+    )
+    passed = gold_total == silver_total
+    return CheckResult(
+        check_name="gold_reconciliation",
+        passed=passed,
+        message=(
+            f"Gold trips {gold_total:,} == silver rows {silver_total:,}"
+            if passed
+            else f"MISMATCH: gold trips {gold_total:,} vs silver rows "
+            f"{silver_total:,} (diff {gold_total - silver_total:+,})"
+        ),
+        metric_value=gold_total,
+        threshold=silver_total,
+        severity="error",
+    )
+
+
+def check_stat_bounds(
+    athena_client,
+    config,
+    database: str,
+    table: str,
+    year: int,
+    month: int,
+    metric_sql: str,
+    lo: float,
+    hi: float,
+    metric_name: str = "metric",
+) -> CheckResult:
+    """Warn if a statistical metric falls outside an expected range.
+
+    metric_sql is an aggregate expression (e.g. "AVG(fare_amount)"). This
+    is a sanity proxy, not ground truth, so it warns rather than blocks.
+    [warn]
+    """
+    sql = (
+        f"SELECT {metric_sql} AS n FROM {table} WHERE year = {year} AND month = {month}"
+    )
+    rows = run_athena_query(
+        athena_client,
+        sql,
+        database=database,
+        workgroup=config.ATHENA_WORKGROUP,
+        output_location=config.ATHENA_OUTPUT_LOCATION,
+    )
+    value = float(next(iter(rows[0].values())))
+    passed = lo <= value <= hi
+    return CheckResult(
+        check_name="stat_bounds",
+        passed=passed,
+        message=f"{metric_name}={value:.2f} (expected {lo}-{hi})",
+        metric_value=value,
+        threshold=hi,
+        severity="warn",
     )
 
 
