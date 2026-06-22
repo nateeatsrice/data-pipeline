@@ -54,6 +54,157 @@ def _parse_data_root(data_root: str) -> tuple:
     return bucket, base_prefix
 
 
+# ─── Check Functions ────────────────────────────────────────────────────────
+
+"""
+list_objects_v2 output dict structure for context
+response = {
+    "KeyCount": 2,
+    "Contents": [
+        {"Key": "silver/part-0.parquet", "Size": 3000, "LastModified": <dt>, ...},
+        {"Key": "silver/part-1.parquet", "Size": 4000, "LastModified": <dt>, ...},
+    ],
+}
+"""
+
+
+def check_s3_object_exists(s3_client, bucket: str, prefix: str) -> CheckResult:
+    """Verify that data was actually written to S3."""
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
+    exists = response.get("KeyCount", 0) > 0  # .get() returns zero if Keycount missing
+    return CheckResult(
+        check_name="s3_object_exists",
+        passed=exists,
+        message=(
+            f"Found objects at s3://{bucket}/{prefix}"
+            if exists
+            else f"NO objects found at s3://{bucket}/{prefix}"
+        ),
+    )
+
+
+def check_s3_file_size(
+    s3_client, bucket: str, prefix: str, min_bytes: int = 1000
+) -> CheckResult:
+    """Verify that files are not suspiciously small (empty/corrupt)."""
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    if "Contents" not in response:
+        return CheckResult(
+            check_name="s3_file_size",
+            passed=False,
+            message=f"No objects found at {prefix}",
+        )
+
+    total_size = sum(obj["Size"] for obj in response["Contents"])
+    passed = total_size >= min_bytes
+    size_mb = total_size / (1024 * 1024)
+
+    return CheckResult(
+        check_name="s3_file_size",
+        passed=passed,
+        message=f"Total size: {size_mb:.2f} MB (min: {min_bytes / 1024:.1f} KB)",
+        metric_value=total_size,
+        threshold=min_bytes,
+    )
+
+
+def check_s3_file_count(
+    s3_client, bucket: str, prefix: str, min_files: int = 1, max_files: int = 1000
+) -> CheckResult:
+    """Verify reasonable number of output files (catches runaway partitioning)."""
+    paginator = s3_client.get_paginator("list_objects_v2")  # incase object count > 1000
+    count = 0
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        count += page.get("KeyCount", 0)
+
+    passed = min_files <= count <= max_files
+    return CheckResult(
+        check_name="s3_file_count",
+        passed=passed,
+        message=f"File count: {count} (expected {min_files}-{max_files})",
+        metric_value=count,
+    )
+
+
+def check_s3_freshness(
+    s3_client, bucket: str, prefix: str, max_age_hours: int = 48
+) -> CheckResult:
+    """Verify that data was written recently (catches stale pipelines)."""
+    from datetime import datetime
+
+    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    if "Contents" not in response:
+        return CheckResult(
+            check_name="s3_freshness",
+            passed=False,
+            message=f"No objects found at {prefix}",
+        )
+
+    latest = max(obj["LastModified"] for obj in response["Contents"])
+    age = datetime.now(UTC) - latest
+    age_hours = age.total_seconds() / 3600
+    passed = age_hours <= max_age_hours
+
+    return CheckResult(
+        check_name="s3_freshness",
+        passed=passed,
+        message=f"Latest file age: {age_hours:.1f} hours (max: {max_age_hours})",
+        metric_value=age_hours,
+        threshold=max_age_hours,
+    )
+
+
+def check_no_unexpected_partitions(
+    s3_client, bucket: str, base_prefix: str, expected_year: int
+) -> CheckResult:
+    """Flag any year=/ partition under a silver/gold path that is not the
+    expected year. Catches stray-year partitions from bad source timestamps
+    leaking through the transforms (see issue #34)."""
+    # List the immediate year=XXXX/ prefixes under the table path.
+    resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=base_prefix, Delimiter="/")
+    prefixes = [p["Prefix"] for p in resp.get("CommonPrefixes", [])]
+    found_years = []
+    for p in prefixes:
+        # p looks like ".../year=2024/"
+        part = p.rstrip("/").split("/")[-1]
+        if part.startswith("year="):
+            found_years.append(part.split("=", 1)[1])
+
+    stray = [y for y in found_years if y != str(expected_year)]
+    passed = len(stray) == 0
+    return CheckResult(
+        check_name="no_unexpected_partitions",
+        passed=passed,
+        message=(
+            f"Only expected year={expected_year} present"
+            if passed
+            else f"STRAY partitions found: {sorted(stray)} (expected only {expected_year})"
+        ),
+    )
+
+
+def test_evaluate_results_warn_failure_does_not_block(self):
+    """A failed warn-severity check logs but does not fail the suite."""
+    from quality.data_quality_checks import CheckResult, evaluate_results
+
+    results = [
+        CheckResult("a", True, "ok"),
+        CheckResult("b", False, "soft fail", severity="warn"),
+    ]
+    assert evaluate_results(results) is True
+
+
+def test_evaluate_results_error_failure_blocks(self):
+    """A failed error-severity check fails the suite (default)."""
+    from quality.data_quality_checks import CheckResult, evaluate_results
+
+    results = [
+        CheckResult("a", True, "ok"),
+        CheckResult("b", False, "hard fail"),  # severity defaults to error
+    ]
+    assert evaluate_results(results) is False
+
+
 # ─── Athena Helper (Tier 2 content checks) ──────────────────────────────────
 
 # Polling tuning. Athena queries are asynchronous: we start one, then poll
@@ -609,155 +760,6 @@ def check_stat_bounds(
         threshold=hi,
         severity="warn",
     )
-
-
-# ─── Check Functions ────────────────────────────────────────────────────────
-
-# list_objects_v2 output dict structure for context
-# response = {
-#     "KeyCount": 2,
-#     "Contents": [
-#         {"Key": "silver/part-0.parquet", "Size": 3000, "LastModified": <dt>, ...},
-#         {"Key": "silver/part-1.parquet", "Size": 4000, "LastModified": <dt>, ...},
-#     ],
-# }
-
-
-def check_s3_object_exists(s3_client, bucket: str, prefix: str) -> CheckResult:
-    """Verify that data was actually written to S3."""
-    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
-    exists = response.get("KeyCount", 0) > 0  # .get() returns zero if Keycount missing
-    return CheckResult(
-        check_name="s3_object_exists",
-        passed=exists,
-        message=(
-            f"Found objects at s3://{bucket}/{prefix}"
-            if exists
-            else f"NO objects found at s3://{bucket}/{prefix}"
-        ),
-    )
-
-
-def check_s3_file_size(
-    s3_client, bucket: str, prefix: str, min_bytes: int = 1000
-) -> CheckResult:
-    """Verify that files are not suspiciously small (empty/corrupt)."""
-    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-    if "Contents" not in response:
-        return CheckResult(
-            check_name="s3_file_size",
-            passed=False,
-            message=f"No objects found at {prefix}",
-        )
-
-    total_size = sum(obj["Size"] for obj in response["Contents"])
-    passed = total_size >= min_bytes
-    size_mb = total_size / (1024 * 1024)
-
-    return CheckResult(
-        check_name="s3_file_size",
-        passed=passed,
-        message=f"Total size: {size_mb:.2f} MB (min: {min_bytes / 1024:.1f} KB)",
-        metric_value=total_size,
-        threshold=min_bytes,
-    )
-
-
-def check_s3_file_count(
-    s3_client, bucket: str, prefix: str, min_files: int = 1, max_files: int = 1000
-) -> CheckResult:
-    """Verify reasonable number of output files (catches runaway partitioning)."""
-    paginator = s3_client.get_paginator("list_objects_v2")  # incase object count > 1000
-    count = 0
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        count += page.get("KeyCount", 0)
-
-    passed = min_files <= count <= max_files
-    return CheckResult(
-        check_name="s3_file_count",
-        passed=passed,
-        message=f"File count: {count} (expected {min_files}-{max_files})",
-        metric_value=count,
-    )
-
-
-def check_s3_freshness(
-    s3_client, bucket: str, prefix: str, max_age_hours: int = 48
-) -> CheckResult:
-    """Verify that data was written recently (catches stale pipelines)."""
-    from datetime import datetime
-
-    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-    if "Contents" not in response:
-        return CheckResult(
-            check_name="s3_freshness",
-            passed=False,
-            message=f"No objects found at {prefix}",
-        )
-
-    latest = max(obj["LastModified"] for obj in response["Contents"])
-    age = datetime.now(UTC) - latest
-    age_hours = age.total_seconds() / 3600
-    passed = age_hours <= max_age_hours
-
-    return CheckResult(
-        check_name="s3_freshness",
-        passed=passed,
-        message=f"Latest file age: {age_hours:.1f} hours (max: {max_age_hours})",
-        metric_value=age_hours,
-        threshold=max_age_hours,
-    )
-
-
-def check_no_unexpected_partitions(
-    s3_client, bucket: str, base_prefix: str, expected_year: int
-) -> CheckResult:
-    """Flag any year=/ partition under a silver/gold path that is not the
-    expected year. Catches stray-year partitions from bad source timestamps
-    leaking through the transforms (see issue #34)."""
-    # List the immediate year=XXXX/ prefixes under the table path.
-    resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=base_prefix, Delimiter="/")
-    prefixes = [p["Prefix"] for p in resp.get("CommonPrefixes", [])]
-    found_years = []
-    for p in prefixes:
-        # p looks like ".../year=2024/"
-        part = p.rstrip("/").split("/")[-1]
-        if part.startswith("year="):
-            found_years.append(part.split("=", 1)[1])
-
-    stray = [y for y in found_years if y != str(expected_year)]
-    passed = len(stray) == 0
-    return CheckResult(
-        check_name="no_unexpected_partitions",
-        passed=passed,
-        message=(
-            f"Only expected year={expected_year} present"
-            if passed
-            else f"STRAY partitions found: {sorted(stray)} (expected only {expected_year})"
-        ),
-    )
-
-
-def test_evaluate_results_warn_failure_does_not_block(self):
-    """A failed warn-severity check logs but does not fail the suite."""
-    from quality.data_quality_checks import CheckResult, evaluate_results
-
-    results = [
-        CheckResult("a", True, "ok"),
-        CheckResult("b", False, "soft fail", severity="warn"),
-    ]
-    assert evaluate_results(results) is True
-
-
-def test_evaluate_results_error_failure_blocks(self):
-    """A failed error-severity check fails the suite (default)."""
-    from quality.data_quality_checks import CheckResult, evaluate_results
-
-    results = [
-        CheckResult("a", True, "ok"),
-        CheckResult("b", False, "hard fail"),  # severity defaults to error
-    ]
-    assert evaluate_results(results) is False
 
 
 # ─── Composite Check Suites ─────────────────────────────────────────────────
