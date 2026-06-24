@@ -80,13 +80,6 @@ resource "aws_glue_crawler" "bronze" {
     delete_behavior = "LOG"
   }
 
-  configuration = jsonencode({
-    Version = 1.0
-    CrawlerOutput = {
-      Partitions = { AddOrUpdateBehavior = "InheritFromTable" }
-    }
-  })
-
   tags = {
     Name = "Bronze Crawler"
   }
