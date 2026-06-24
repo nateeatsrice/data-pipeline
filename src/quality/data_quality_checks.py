@@ -54,7 +54,7 @@ def _parse_data_root(data_root: str) -> tuple:
     return bucket, base_prefix
 
 
-# ─── Check Functions ────────────────────────────────────────────────────────
+# ─── Check S3 Functions ────────────────────────────────────────────────────────
 
 """
 list_objects_v2 output dict structure for context
@@ -181,28 +181,6 @@ def check_no_unexpected_partitions(
             else f"STRAY partitions found: {sorted(stray)} (expected only {expected_year})"
         ),
     )
-
-
-def test_evaluate_results_warn_failure_does_not_block(self):
-    """A failed warn-severity check logs but does not fail the suite."""
-    from quality.data_quality_checks import CheckResult, evaluate_results
-
-    results = [
-        CheckResult("a", True, "ok"),
-        CheckResult("b", False, "soft fail", severity="warn"),
-    ]
-    assert evaluate_results(results) is True
-
-
-def test_evaluate_results_error_failure_blocks(self):
-    """A failed error-severity check fails the suite (default)."""
-    from quality.data_quality_checks import CheckResult, evaluate_results
-
-    results = [
-        CheckResult("a", True, "ok"),
-        CheckResult("b", False, "hard fail"),  # severity defaults to error
-    ]
-    assert evaluate_results(results) is False
 
 
 # ─── Athena Helper (Tier 2 content checks) ──────────────────────────────────
